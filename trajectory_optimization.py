@@ -101,10 +101,10 @@ def create_animation(data, losses):
 
     #plot start and goal
     start_cart = fk(start_config).detach().numpy()
-    ax0.plot(start_cart[0], start_cart[1], 'o', color="yellow")
+    ax0.plot(start_cart[0], start_cart[1], 'o', color="yellow", label="start_config")
 
     goal_cart = fk(goal_config).detach().numpy()
-    ax0.plot(goal_cart[0], goal_cart[1], 'o', color="orange")
+    ax0.plot(goal_cart[0], goal_cart[1], 'o', color="gold", label="goal_config")
 
     ax0.plot([0], [0], 'o', color="black", label="robot base")
 
@@ -116,7 +116,7 @@ def create_animation(data, losses):
     #cartesian_data = fk(data[0]).detach().numpy()
     #ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:brown')
     cartesian_data = fk(straight_line).detach().numpy()
-    ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:gray')
+    ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:gray', label="initial straight line trajectory")
 
     #cartesian_data = fk(custom_trajectory).detach().numpy()
     #ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:green')
@@ -146,7 +146,7 @@ def create_animation(data, losses):
 
     # Title.
     title_text = 'Trajectory Optimization \n Iteration %d, Loss %.2f'
-    title = ax0.text(0.5, 0.4, title_text, horizontalalignment='center', verticalalignment='center', transform=fig.transFigure, fontsize=14)
+    title = ax1.text(0.5, 0.4, title_text, horizontalalignment='center', verticalalignment='center', transform=fig.transFigure, fontsize=14)
 
     # Init only required for blitting to give a clean slate.
     def init():
@@ -192,7 +192,7 @@ def create_animation(data, losses):
 
     ani = FuncAnimation(fig, animate, len(data.keys()), init_func=init, interval=20, blit=True, repeat=False)
     plt.show()
-    #ani.save('to.gif', writer='imagemagick', fps=60)
+    ani.save('to.gif', writer='imagemagick', fps=60)
 
 
 
