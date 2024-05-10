@@ -7,7 +7,7 @@ from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation
 
 
-N_timesteps = 15
+N_timesteps = 100
 N_joints = 3
 
 obstacles = torch.tensor([
@@ -59,30 +59,15 @@ def plot_loss_contour(fig, ax):
     # x and y are bounds, so z should be the value *inside* those bounds.
     # Therefore, remove the last value from the z array.
     z = z[:-1, :-1]
+
+    #draw
     levels = MaxNLocator(nbins=15).tick_values(z.min(), z.max())
 
-
-    # pick the desired colormap, sensible levels, and define a normalization
-    # instance which takes data values and translates those into levels.
-    cmap = plt.get_cmap('PiYG')
-    norm = BoundaryNorm(levels, ncolors=cmap.N, clip=True)
-
-
-    #im = ax0.pcolormesh(x, y, z, cmap=cmap, norm=norm)
-    #fig.colorbar(im, ax=ax0)
-    #ax0.set_title('pcolormesh with levels')
-
-
-    # contours are *point* based plots, so convert our bound into point
-    # centers
     cf = ax.contourf(x[:-1, :-1] + dx/2.,
                     y[:-1, :-1] + dy/2., z, levels=levels,
-                    cmap=cmap)
+                    cmap=plt.get_cmap('PiYG'))
     fig.colorbar(cf, ax=ax)
-    ax.set_title('contourf with levels')
-
-    # adjust spacing between subplots so `ax1` title and `ax0` tick labels
-    # don't overlap
+    
     fig.tight_layout()
 
 
@@ -96,22 +81,30 @@ def create_animation(data):
     # Plot true hypothesis.
     plot_loss_contour(fig, ax)
 
-
+    #plot start and goal
     start_cart = fk(start_config).detach().numpy()
     plt.plot(start_cart[0], start_cart[1], 'o', color="yellow")
 
     goal_cart = fk(goal_config).detach().numpy()
     plt.plot(goal_cart[0], goal_cart[1], 'o', color="orange")
 
-        
+    # plot workspace
+    circle1 = plt.Circle((0, 0), 3, color='black', fill=False)
+    ax.add_patch(circle1)
+
+    # plot init trajectory
+    cartesian_data = fk(data[0]).detach().numpy()
+    plt.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:brown')
+    cartesian_data = fk(straight_line).detach().numpy()
+    plt.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:gray')
 
 
     cartesian_data = fk(data[0]).detach().numpy()
-    curr_fx, = ax.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:red', label='Learned Hypothesis')
+    curr_fx, = ax.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:blue')
     ax.legend(loc='lower center')
 
     # Title.
-    title_text = 'Trajectory Optimization \n Iteration %d'
+    title_text = 'Trajectory Optimization Iteration %d'
     title = plt.text(0.5, 0.85, title_text, horizontalalignment='center', verticalalignment='center', transform=fig.transFigure, fontsize=14)
 
     # Init only required for blitting to give a clean slate.
@@ -167,12 +160,33 @@ def init_trajectory():
     t = torch.linspace(0, 1, N_timesteps)
     kernel_matrix = create_kernel_matrix(poly_kernel, t, t)
     alpha = torch.randn((N_timesteps, N_joints), requires_grad=True)
+
+    #fit_trajectory_to_straigth_line
+    with torch.no_grad():
+        y = straight_line.clone()
+
+        for iteration in range(400):
+
+            # Evaluate fx using the current alpha.
+            fx = evaluate(alpha, kernel_matrix)
+
+            # Compute loss (just for logging!).
+            loss = torch.sum(torch.square(y - fx)) + lambda_reg * torch.sum((torch.matmul(alpha.T, fx)))
+            print('Init %d: Loss = %0.3f' % (iteration, loss))
+
+            # Compute gradient and update.
+            alpha = 2 * lr * (y - fx) + (1 - 2 * lambda_reg * lr) * alpha
+
+    alpha.requires_grad = True
     return t, alpha, kernel_matrix
 
     #trajectory = torch.rand((N_timesteps, N_joints), requires_grad=True)
     #for i in range(N_timesteps):
     #    trajectory.data[i] = start_config + (goal_config - start_config) * i / (N_timesteps - 1) + torch.rand(3)/20
     #return trajectory
+
+
+
 
 
 """
@@ -183,9 +197,6 @@ def compute_trajectory_smoothness_cost(trajectory):
     return cost
 
 
-def compute_trajectory_cost(trajectory):
-    w = 1
-    return compute_trajectory_obstacle_cost(trajectory) #+ (1-w) * compute_trajectory_smoothness_cost(trajectory)
 """
 
 def compute_cartesian_cost(f):
@@ -197,7 +208,7 @@ def compute_cartesian_cost(f):
     b = b1.expand(d, t_len, o_len)
     cost_v = torch.sum(0.8 / (0.5 + torch.norm(a - b, dim=0)), dim=1)
     cost = torch.sum(cost_v)
-    return cost, cost_v
+    return cost
 
 def compute_raw_trajectory_obstacle_cost(trajectory):
     f = fk(trajectory)
@@ -208,6 +219,16 @@ def compute_trajectory_obstacle_cost(alpha, km):
     trajectory = evaluate(alpha, km)
     return compute_raw_trajectory_obstacle_cost(trajectory)
 
+
+def start_goal_cost(alpha, km):
+    trajectory = evaluate(alpha, km)
+    s = trajectory[0]
+    g = trajectory[N_timesteps-1]
+    loss = torch.norm(s-start_config) + torch.norm(g-goal_config)
+    return loss
+
+def compute_trajectory_cost(alpha, km):
+    return compute_trajectory_obstacle_cost(alpha, km) #+ start_goal_cost(alpha, km)
 
 def compute_point_obstacle_cost(x,y):
     cost = np.zeros_like(x)
@@ -224,26 +245,30 @@ def compute_point_obstacle_cost(x,y):
 
 #plot_loss_contour()
 
-
-t, alpha, km = init_trajectory()
-
-max_iteration = 100
-lr = 0.01         
+max_iteration = 400
+lr = 0.002   
 lambda_reg = 0.02
 
+t, alpha, km = init_trajectory()
 #alpha.retain_grad()
+
 
 data = {}
 
+data[0] = evaluate(alpha, km)
 
-#for iter in range(max_iteration):
-#    loss, _ = compute_trajectory_obstacle_cost(alpha, km)
-#    loss.backward()
-#    with torch.no_grad():
-#        print(iter, loss.item())
-#        alpha.data = alpha.data - lr * alpha.grad.data
-#        alpha.grad.zero_()
+for iter in range(max_iteration):
+    loss = compute_trajectory_cost(alpha, km)
+    loss.backward()
+    with torch.no_grad():
+        print(iter, loss.item())
+        alpha.data = (1 + 2 * lambda_reg * lr) * alpha.data - 2 * lr * alpha.grad.data
+        alpha.grad.zero_()
 
+        data[iter+1] = evaluate(alpha, km)
+
+
+"""
 data[0] = straight_line
 
 for iter in range(200):
@@ -259,11 +284,11 @@ for iter in range(200):
         straight_line.grad.zero_()
 
         data[iter + 1] = straight_line.detach().clone()
+"""
 
 
 
-
-
+"""
 for iter in range(70):
     loss, li = compute_cartesian_cost(cart)
     loss.backward()
@@ -277,7 +302,7 @@ for iter in range(70):
 
         cart.data = cart.data - lr * cart.grad.data
         cart.grad.zero_()
-
+"""
 
 
 create_animation(data)
