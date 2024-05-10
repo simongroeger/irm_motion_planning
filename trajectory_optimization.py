@@ -10,11 +10,11 @@ from matplotlib.animation import FuncAnimation
 N_timesteps = 100
 N_joints = 3
 
-rbf_var = 0.1
+rbf_var = 0.2
 
-max_iteration = 2000
-lr_start = 0.01
-lr_end = 0.0001
+max_iteration = 800
+lr_start = 0.001
+lr_end = 0.00005
 lambda_reg = 0.1
 
 def lr(iter):
@@ -106,9 +106,11 @@ def create_animation(data, losses):
     goal_cart = fk(goal_config).detach().numpy()
     ax0.plot(goal_cart[0], goal_cart[1], 'o', color="orange")
 
+    ax0.plot([0], [0], 'o', color="black", label="robot base")
+
     # plot workspace
-    circle1 = plt.Circle((0, 0), 3, color='black', fill=False)
-    ax0.add_patch(circle1)
+    #circle1 = plt.Circle((0, 0), 3, color='black', fill=False)
+    #ax0.add_patch(circle1)
 
     # plot init trajectory
     #cartesian_data = fk(data[0]).detach().numpy()
@@ -120,13 +122,13 @@ def create_animation(data, losses):
     #ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:green')
 
 
-    cartesian_data = fk(data[0]).detach().numpy()
-    curr_fx, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='darkgreen')
     cartesian_data = fk_joint(data[0], 1).detach().numpy()
-    curr_fx1, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='blue')
+    curr_fx1, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='blue', label="joint 0")
     cartesian_data = fk_joint(data[0], 2).detach().numpy()
-    curr_fx2, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='orange')
-
+    curr_fx2, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='orange', label="joint 1")
+    cartesian_data = fk(data[0]).detach().numpy()
+    curr_fx, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='darkgreen', label="joint 2")
+    
 
     ax0.legend(loc='lower center')
 
@@ -138,9 +140,9 @@ def create_animation(data, losses):
     ax1.plot(t, data[len(data)-1][:, 1].detach().numpy(), '-', color='grey')
     ax1.plot(t, data[len(data)-1][:, 2].detach().numpy(), '-', color='grey')
 
-    s1, = ax1.plot(t, data[0][:, 0].detach().numpy(), '-', color='blue')
-    s2, = ax1.plot(t, data[0][:, 1].detach().numpy(), '-', color='orange')
-    s3, = ax1.plot(t, data[0][:, 2].detach().numpy(), '-', color='green')
+    s1, = ax1.plot(t, data[0][:, 0].detach().numpy(), '-', color='blue', label="joint 0 angle")
+    s2, = ax1.plot(t, data[0][:, 1].detach().numpy(), '-', color='orange', label="joint 1 angle")
+    s3, = ax1.plot(t, data[0][:, 2].detach().numpy(), '-', color='green', label="joint 2 angle")
 
     # Title.
     title_text = 'Trajectory Optimization \n Iteration %d, Loss %.2f'
@@ -245,7 +247,7 @@ def init_trajectory():
     with torch.no_grad():
         y = straight_line.clone()
 
-        for iteration in range(400):
+        for iteration in range(500):
 
             # Evaluate fx using the current alpha.
             fx = evaluate(alpha, kernel_matrix)
@@ -283,7 +285,8 @@ def compute_cartesian_cost(f):
     b1 = obstacles.T.reshape((d, 1, -1))
     b = b1.expand(d, t_len, o_len)
     cost_v = torch.sum(0.8 / (0.5 + torch.norm(a - b, dim=0)), dim=1)
-    cost = torch.sum(cost_v) / N_timesteps
+    #cost = torch.sum(cost_v) / N_timesteps
+    cost = torch.max(cost_v) + torch.sum(cost_v) / N_timesteps
     return cost
 
 def compute_raw_trajectory_obstacle_cost(trajectory):
@@ -300,7 +303,7 @@ def start_goal_cost(alpha, km):
     trajectory = evaluate(alpha, km)
     s = trajectory[0]
     g = trajectory[N_timesteps-1]
-    loss = 1 * (torch.norm(s-start_config) + torch.norm(g-goal_config))
+    loss = 2 * (torch.norm(s-start_config) + torch.norm(g-goal_config))
     return loss
 
 
@@ -325,8 +328,8 @@ for iter in range(max_iteration):
     loss.backward()
     with torch.no_grad():
         if iter % 10 == 0: print(iter, loss.item())
-        #alpha.data = (1 - 2 * lambda_reg * lr(iter)) * alpha.data - 2 * lr(iter) * alpha.grad.data
-        alpha.data = alpha.data - lr(iter) * alpha.grad.data
+        alpha.data = (1 + lambda_reg * lr(iter)) * alpha.data - lr(iter) * alpha.grad.data
+        #alpha.data = alpha.data - lr(iter) * alpha.grad.data
         alpha.grad.zero_()
 
         data[iter+1] = evaluate(alpha, km)
