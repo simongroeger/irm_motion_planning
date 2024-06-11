@@ -18,8 +18,9 @@ lr_end =   0.000001
 lambda_reg = 0.1
 lambda_constraint = 2
 
-def lr(iter):
-    return lr_start + (lr_end - lr_start) * iter / max_iteration
+max_joint_velocity = 5
+min_joint_position = -1
+max_joint_position = 2
 
 
 obstacles = torch.tensor([
@@ -48,20 +49,10 @@ straight_line = torch.stack((
     torch.linspace(start_config[1], goal_config[1], N_timesteps),
     torch.linspace(start_config[2], goal_config[2], N_timesteps)    
 )).T
-straight_line.requires_grad = True
-
-cart = torch.Tensor([[2.5, 0.0, 2.0],
-                     [2.0, 1.0, 2.0]])
-cart.requires_grad = True
 
 
-custom_trajectory = torch.Tensor([[0.0, 0.0, 0.0],
-                                  [0.0, -0.4, 0.15],
-                                  [0.0, 0.8, 0.3],
-                                  [0.4, 0.8, 0.3],
-                                  [0.8, 0.8, 0.3],
-                                  [1.2, 0.8, 0.3]])
-
+def lr(iter):
+    return lr_start + (lr_end - lr_start) * iter / max_iteration
 
 
 def plot_loss_contour(fig, ax):
@@ -95,9 +86,10 @@ def plot_loss_contour(fig, ax):
 # Creates the animation.
 def create_animation(data, losses):
     
-    fig, ((ax0, ax2), (ax1, ax3)) = plt.subplots(nrows=2, ncols=2)
-    
-    # Plot true hypothesis.
+    fig, ((ax0, ax2, ax4), (ax1, ax5, ax3)) = plt.subplots(nrows=2, ncols=3)
+    last_id = len(data.keys())-1 
+
+    # Plot 2d workspace cost potential
     plot_loss_contour(fig, ax0)
     plot_loss_contour(fig, ax2)
 
@@ -109,24 +101,13 @@ def create_animation(data, losses):
     goal_cart = fk(goal_config).detach().numpy()
     ax0.plot(goal_cart[0], goal_cart[1], 'o', color="gold", label="goal_config")
     ax2.plot(goal_cart[0], goal_cart[1], 'o', color="gold", label="goal_config")
-
-    ax0.plot([0], [0], 'o', color="black", label="robot base = joint 0")
-    ax2.plot([0], [0], 'o', color="black", label="robot base = joint 0")
-
-    # plot workspace
-    #circle1 = plt.Circle((0, 0), 3, color='black', fill=False)
-    #ax0.add_patch(circle1)
-
-    # plot init trajectory
-    #cartesian_data = fk(data[0]).detach().numpy()
-    #ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:brown')
+ 
     cartesian_data = fk(straight_line).detach().numpy()
     ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:gray', label="initial straight line trajectory")
 
-    #cartesian_data = fk(custom_trajectory).detach().numpy()
-    #ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:green')
-
-
+    ax0.plot([0], [0], 'o', color="black", label="joint 0")
+    ax2.plot([0], [0], 'o', color="black", label="joint 0")
+   
     cartesian_data = fk_joint(data[0], 1).detach().numpy()
     curr_fx1, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='blue', label="joint 1")
     cartesian_data = fk_joint(data[0], 2).detach().numpy()
@@ -135,46 +116,65 @@ def create_animation(data, losses):
     curr_fx, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='darkgreen', label="ee")
     
 
-    ax0.legend(loc='lower center')
-
-    ax1.plot(t, straight_line[:, 0].detach().numpy(), '-', color='darkblue')
-    ax1.plot(t, straight_line[:, 1].detach().numpy(), '-', color='orangered')
-    ax1.plot(t, straight_line[:, 2].detach().numpy(), '-', color='darkgreen')
-
-    ax1.plot(t, data[len(data)-1][:, 0].detach().numpy(), '-', color='grey')
-    ax1.plot(t, data[len(data)-1][:, 1].detach().numpy(), '-', color='grey')
-    ax1.plot(t, data[len(data)-1][:, 2].detach().numpy(), '-', color='grey')
-
-
-    final_trajectory_point_cost = np.zeros(N_timesteps)
+    # trajectory point cost over iteration
+    trajectory_point_cost = np.zeros(N_timesteps)
     for i in range(N_timesteps):
-        final_trajectory_point_cost[i] = compute_raw_trajectory_obstacle_cost(data[0][i]).detach().numpy() / 2
-    s5, = ax3.plot(t, final_trajectory_point_cost, '-', color='black')
+        trajectory_point_cost[i] = compute_raw_trajectory_obstacle_cost(data[last_id][i]).item() / 2
+    ax3.plot(t, trajectory_point_cost, '-', color='grey')
+    for i in range(N_timesteps):
+        trajectory_point_cost[i] = compute_raw_trajectory_obstacle_cost(data[0][i]).item() / 2
+    ax3.plot(t, trajectory_point_cost, '-', color='grey')
+    s5, = ax3.plot(t, trajectory_point_cost, '-', color='black')
 
-    s1, = ax1.plot(t, data[0][:, 0].detach().numpy(), '-', color='blue', label="joint 0 angle")
-    s2, = ax1.plot(t, data[0][:, 1].detach().numpy(), '-', color='orange', label="joint 1 angle")
-    s3, = ax1.plot(t, data[0][:, 2].detach().numpy(), '-', color='green', label="joint 2 angle")
 
-
-    last_id = len(data.keys())-1 
+    # final robot movement
     fin_movement = np.zeros((4, 2, N_timesteps))
     fin_movement[1] = fk_joint(data[last_id], 1).detach().numpy()
     fin_movement[2] = fk_joint(data[last_id], 2).detach().numpy()
     fin_movement[3] = fk_joint(data[last_id], 3).detach().numpy()
     s4,  = ax2.plot(fin_movement[:,0,0], fin_movement[:,1,0], '-', color = 'black', label="robot")
 
+
+    # joint position over iteration
+    ax1.plot(t, straight_line[:, 0].detach().numpy(), '-', color='grey')
+    ax1.plot(t, straight_line[:, 1].detach().numpy(), '-', color='grey')
+    ax1.plot(t, straight_line[:, 2].detach().numpy(), '-', color='grey')
+
+    ax1.plot(t, data[last_id][:, 0].detach().numpy(), '-', color='grey')
+    ax1.plot(t, data[last_id][:, 1].detach().numpy(), '-', color='grey')
+    ax1.plot(t, data[last_id][:, 2].detach().numpy(), '-', color='grey')
+
+    s1, = ax1.plot(t, data[0][:, 0].detach().numpy(), '-', color='blue', label="joint 0")
+    s2, = ax1.plot(t, data[0][:, 1].detach().numpy(), '-', color='orange', label="joint 1")
+    s3, = ax1.plot(t, data[0][:, 2].detach().numpy(), '-', color='green', label="joint 2")
+
+
+    # joint velocities over iterations
+    joint_velocity = (data[last_id][1 : ] - data[last_id][ : len(data[last_id])-1]) * N_timesteps
+    s6, = ax5.plot(t[:N_timesteps-1], joint_velocity[:, 0].detach().numpy(), '-', color='blue', label="joint 0")
+    s7, = ax5.plot(t[:N_timesteps-1], joint_velocity[:, 1].detach().numpy(), '-', color='orange', label="joint 1")
+    s8, = ax5.plot(t[:N_timesteps-1], joint_velocity[:, 2].detach().numpy(), '-', color='green', label="joint 2")
+
+
     # Title.
     title_text = 'Trajectory Optimization \n Iteration %d, Loss %.2f'
-    title = ax1.text(0.5, 0.4, title_text, horizontalalignment='center', verticalalignment='center', transform=fig.transFigure, fontsize=14)
+    title = ax0.text(0.8, 0.9, title_text, horizontalalignment='center', verticalalignment='center', transform=fig.transFigure, fontsize=14)
+
+    ax0.legend(loc='lower left')
+    ax2.legend(loc='lower left', title="final robot movement")
+    ax1.legend(title="joint position")
+    ax5.legend(title="joint velocity")
+    ax3.legend(title="trajectory cost")
 
     # Init only required for blitting to give a clean slate.
     def init():
-        title.set_text(title_text % (0, 0))
-        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, s4, s5, title,
-
+        return animate(0)
+        
     # Update at each iteration.
     def animate(iteration):
         if iteration % 10 == 0:
+            title.set_text(title_text % (iteration, losses[iteration]))
+
             cartesian_data = fk(data[iteration]).detach().numpy()
             curr_fx.set_xdata(cartesian_data[0])
             curr_fx.set_ydata(cartesian_data[1])
@@ -187,26 +187,32 @@ def create_animation(data, losses):
             curr_fx2.set_xdata(cartesian_data[0])
             curr_fx2.set_ydata(cartesian_data[1])
 
-            final_trajectory_point_cost = np.zeros(N_timesteps)
+            trajectory_point_cost = np.zeros(N_timesteps)
             for i in range(N_timesteps):
-                final_trajectory_point_cost[i] = compute_raw_trajectory_obstacle_cost(data[iteration][i]).detach().numpy() / 2
-            s5.set_ydata(final_trajectory_point_cost)
+                trajectory_point_cost[i] = compute_raw_trajectory_obstacle_cost(data[iteration][i]).item() / 2
+            s5.set_ydata(trajectory_point_cost)
 
 
             s1.set_ydata(data[iteration][:, 0].detach().numpy())
             s2.set_ydata(data[iteration][:, 1].detach().numpy())
             s3.set_ydata(data[iteration][:, 2].detach().numpy())
-            title.set_text(title_text % (iteration, losses[iteration]))
-        
-        ri = int(iteration * N_timesteps / len(data.keys()))
-        s4.set_xdata(fin_movement[:,0,ri])
-        s4.set_ydata(fin_movement[:,1,ri])
 
-        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, s4, s5, title,
+            joint_velocity = (data[iteration][1 : ] - data[iteration][ : len(data[iteration])-1]) * N_timesteps
+            s6.set_ydata(joint_velocity[:, 0].detach().numpy())
+            s7.set_ydata(joint_velocity[:, 1].detach().numpy())
+            s8.set_ydata(joint_velocity[:, 2].detach().numpy())
+        
+            
+            ri = int(iteration * N_timesteps / len(data.keys()))
+            s4.set_xdata(fin_movement[:,0,ri])
+            s4.set_ydata(fin_movement[:,1,ri])
+
+        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, s4, s5, s6, s7, s8, title,
 
     ani = FuncAnimation(fig, animate, len(data.keys()), init_func=init, interval=20, blit=True, repeat=False)
+    plt.subplots_adjust(wspace=0.1, hspace=0.1)
     plt.show()
-    #ani.save('to.gif', writer='imagemagick', fps=60)
+    #ani.save('to.gif', fps=60)
 
 
 
@@ -245,9 +251,6 @@ def evaluate(alpha, kernel_matrix, jac):
 def eval_any(alpha, kernel_f, support_x, eval_x, jac):
     return evaluate(alpha, create_kernel_matrix(kernel_f, eval_x, support_x), jac)
 
-def eval_any_single(alpha, kernel_f, support_x, eval_x, jac):
-    return kernel_f(support_x, eval_x) @ jac @ alpha  
-
 
 def fk(config):
     c2 = config.reshape(-1, 3)
@@ -273,11 +276,11 @@ def init_trajectory():
     kernel_matrix = create_kernel_matrix(rbf_kernel, t, t)
     alpha = torch.randn((N_timesteps, N_joints), requires_grad=True)
 
-    jc = 0.5 * (start_config + goal_config)
-    a = jacobian(jc)[0]
-    unjac = jacobian(jc)[0].T @ jacobian(jc)[0]
-    jac = unjac / torch.mean(unjac)
-    #jac = torch.eye(3) + torch.randn((3,3)) / 10
+    #jc = 0.5 * (start_config + goal_config)
+    #a = jacobian(jc)[0]
+    #unjac = jacobian(jc)[0].T @ jacobian(jc)[0]
+    #jac = unjac / torch.mean(unjac)
+    jac = torch.eye(3) + torch.randn((3,3)) / 5
 
     lr = 0.002
     lambda_reg = 0.02
@@ -303,20 +306,6 @@ def init_trajectory():
     return t, alpha, kernel_matrix, jac
 
 
-
-def compute_point_obstacle_cost(x,y):
-    cost = np.zeros_like(x)
-    for i in range(x.shape[0]):
-        for j in range(x.shape[1]):
-            point = np.array([x[i,j], y[i,j]])
-            c = 0
-            for o in obstacles.detach().numpy():
-                c += 0.8  / (0.5 + np.linalg.norm(point - o))
-            cost[i,j] = c
-    return cost
-
-
-
 def compute_cartesian_cost(f):
     d = 2
     t_len = f.shape[1]
@@ -328,6 +317,16 @@ def compute_cartesian_cost(f):
     #cost = torch.sum(cost_v) / N_timesteps
     cost = torch.max(cost_v) + torch.sum(cost_v) / cost_v.shape[0]
     return cost
+
+
+def compute_point_obstacle_cost(x,y):
+    cost = np.zeros_like(x)
+    for i in range(x.shape[0]):
+        for j in range(x.shape[1]):
+            point = torch.Tensor([[x[i,j]], [y[i,j]]])
+            cost[i,j] = compute_cartesian_cost(point).item() / 2
+    return cost
+
 
 def compute_raw_trajectory_obstacle_cost(trajectory):
     f = fk(trajectory)
@@ -351,13 +350,20 @@ def start_goal_cost(alpha, km, jac):
 
 def joint_limit_cost(alpha, km, jac):
     trajectory = evaluate(alpha, km, jac)
-    loss = torch.sum(torch.exp(100*(trajectory - 2)) + torch.exp(100*(-trajectory - 1))) / N_timesteps
+    loss = torch.sum(torch.exp(100*(trajectory - max_joint_position)) + torch.exp(100*(-(trajectory - min_joint_position)))) / N_timesteps
+    return loss
+
+
+def joint_velocity_limit_cost(alpha, km, jac):
+    trajectory = evaluate(alpha, km, jac)
+    joint_abs_velocity = torch.abs(trajectory[1 : ] - trajectory[ : len(trajectory)-1]) * N_timesteps
+    loss = torch.sum(torch.exp(100*(joint_abs_velocity - max_joint_velocity))) / N_timesteps
     return loss
 
 
 def compute_trajectory_cost(alpha, km, jac):
     #print(compute_trajectory_obstacle_cost(alpha, km).item(), start_goal_cost(alpha, km).item(), joint_limit_cost(alpha, km).item())
-    return compute_trajectory_obstacle_cost(alpha, km, jac) + lambda_constraint * start_goal_cost(alpha, km, jac) #+ lambda_constraint * joint_limit_cost(alpha, km, jac)
+    return compute_trajectory_obstacle_cost(alpha, km, jac) + lambda_constraint * (start_goal_cost(alpha, km, jac) + joint_limit_cost(alpha, km, jac) + joint_velocity_limit_cost(alpha, km, jac))
 
 
 
@@ -372,7 +378,7 @@ losses = {}
 data[0] = evaluate(alpha, km, jac)
 losses[0] = 0
 
-
+print(jac)
 
 
 for iter in range(max_iteration):
@@ -382,81 +388,16 @@ for iter in range(max_iteration):
     with torch.no_grad():
         if iter % 10 == 0: print(iter, loss.item())
         alpha.data = (1 - lambda_reg * lr(iter)) * alpha.data - lr(iter) * alpha.grad.data
-        jac.data = (1 - lambda_reg * lr(iter)) * jac.data - lr(iter) * jac.grad.data
+        #jac.data = (1 - lambda_reg * lr(iter)) * jac.data - lr(iter) * jac.grad.data
         #alpha.data = alpha.data - lr(iter) * alpha.grad.data
         alpha.grad.zero_()
 
         data[iter+1] = evaluate(alpha, km, jac)
         losses[iter+1] = loss.detach().item()
 
+print(jac)
+
 create_animation(data, losses)
-
-
-
-
-
-
-"""
-data[0] = straight_line
-
-for iter in range(200):
-    loss, _ = compute_raw_trajectory_obstacle_cost(straight_line)
-    loss.backward()
-    with torch.no_grad():
-        print(iter, loss.item())
-
-        b = fk(straight_line)
-        #plt.plot([b[0,8].item()], [b[1,8].item()], 'o', color="brown")
-
-        straight_line.data = straight_line.data - lr * straight_line.grad.data
-        straight_line.grad.zero_()
-
-        data[iter + 1] = straight_line.detach().clone()
-
-        
-for iter in range(70):
-    loss, li = compute_cartesian_cost(cart)
-    loss.backward()
-    with torch.no_grad():
-        print()
-        print(iter, loss.item())
-        #print(cart[:, 0].detach().numpy(), li[0].detach().numpy(), compute_point_obstacle_cost(np.array([[cart[0, 0].item()]]), np.array([[cart[1, 0].item()]])))
-        #print(cart.grad)
-
-        #plt.plot([cart[0,1].item()], [cart[1,1].item()], 'o', color="brown")
-
-        cart.data = cart.data - lr * cart.grad.data
-        cart.grad.zero_()
-"""
-
-
-
-
-exit(0)
-
-start_cart = fk(start_config).detach().numpy()
-plt.plot(start_cart[0], start_cart[1], 'o', color="yellow")
-
-goal_cart = fk(goal_config).detach().numpy()
-plt.plot(goal_cart[0], goal_cart[1], 'o', color="orange")
-
-a = fk(evaluate(alpha, km, jac)).detach().numpy()
-plt.plot(a[0], a[1])
-
-b = fk(straight_line).detach().numpy()
-plt.plot(b[0], b[1])
-
-c = cart.detach().numpy()
-plt.plot(c[0], c[1])
-
-plt.plot([0], [0], 'o', color="black")
-plt.scatter(obstacles[:, 0], obstacles[:, 1])
-
-plt.show()
-
-    
-
-
 
 
 
