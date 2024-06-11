@@ -1,13 +1,24 @@
 import numpy as np
+import time
 import matplotlib.pyplot as plt
 from math import atan2, sin, cos, sqrt
-import torch
+
+import jax
+import jax.numpy as jnp
+
 from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation
 
-import jax
-import jax.numpy as jnp
+
+import os
+os.environ['TF_XLA_FLAGS'] = (
+    '--xla_gpu_enable_triton_softmax_fusion=true '
+    '--xla_gpu_triton_gemm_any=True '
+    '--xla_gpu_enable_async_collectives=true '
+    '--xla_gpu_enable_latency_hiding_scheduler=true '
+    '--xla_gpu_enable_highest_priority_async_stream=true '
+)
 
 #param
 N_timesteps = 100
@@ -16,8 +27,8 @@ N_joints = 3
 rbf_var = 0.2
 
 max_iteration = 500
-lr_start = 0.001
-lr_end =   0.00002
+lr_start = 0.01
+lr_end =   0.0001
 lambda_reg = 0.1
 lambda_constraint = 2
 
@@ -56,10 +67,10 @@ def lr(iter):
     return lr_start + (lr_end - lr_start) * iter / max_iteration
 
 
-def plot_loss_contour(fig, ax):
+def plot_loss_contour(fig, axs):
 
     # make these smaller to increase the resolution
-    dx, dy = 0.05, 0.05
+    dx, dy = 0.1, 0.1
 
     # generate 2 2d grids for the x & y bounds
     x, y = np.mgrid[slice(-4, 4 + dy, dy),
@@ -75,10 +86,11 @@ def plot_loss_contour(fig, ax):
     #draw
     levels = MaxNLocator(nbins=15).tick_values(z.min(), z.max())
 
-    cf = ax.contourf(x[:-1, :-1] + dx/2.,
+    for ax in axs:
+        cf = ax.contourf(x[:-1, :-1] + dx/2.,
                     y[:-1, :-1] + dy/2., z, levels=levels,
                     cmap=plt.get_cmap('PiYG'))
-    fig.colorbar(cf, ax=ax)
+        fig.colorbar(cf, ax=ax)
     
     fig.tight_layout()
 
@@ -88,11 +100,10 @@ def plot_loss_contour(fig, ax):
 def create_animation(data, losses):
     
     fig, ((ax0, ax2, ax4), (ax1, ax5, ax3)) = plt.subplots(nrows=2, ncols=3)
-    last_id = len(data.keys())-1 
+    last_id = max(data.keys())
 
     # Plot 2d workspace cost potential
-    plot_loss_contour(fig, ax0)
-    plot_loss_contour(fig, ax2)
+    plot_loss_contour(fig, [ax0, ax2])
 
     #plot start and goal
     start_cart = fk(start_config)
@@ -120,10 +131,10 @@ def create_animation(data, losses):
     # trajectory point cost over iteration
     trajectory_point_cost = np.zeros(N_timesteps)
     for i in range(N_timesteps):
-        trajectory_point_cost[i] = compute_raw_trajectory_obstacle_cost(data[last_id][i]).item() / 2
+        trajectory_point_cost[i] = compute_trajectory_obstacle_cost(data[last_id][i]).item() / 2
     ax3.plot(t, trajectory_point_cost, '-', color='grey')
     for i in range(N_timesteps):
-        trajectory_point_cost[i] = compute_raw_trajectory_obstacle_cost(data[0][i]).item() / 2
+        trajectory_point_cost[i] = compute_trajectory_obstacle_cost(data[0][i]).item() / 2
     ax3.plot(t, trajectory_point_cost, '-', color='grey')
     s5, = ax3.plot(t, trajectory_point_cost, '-', color='black')
 
@@ -191,7 +202,7 @@ def create_animation(data, losses):
 
             trajectory_point_cost = np.zeros(N_timesteps)
             for i in range(N_timesteps):
-                trajectory_point_cost[i] = compute_raw_trajectory_obstacle_cost(data[iteration][i]).item() / 2
+                trajectory_point_cost[i] = compute_trajectory_obstacle_cost(data[iteration][i]).item() / 2
             s5.set_ydata(trajectory_point_cost)
 
 
@@ -205,13 +216,13 @@ def create_animation(data, losses):
             s8.set_ydata(joint_velocity[:, 2])
         
             
-            ri = int(iteration * N_timesteps / len(data.keys()))
+            ri = int(iteration * N_timesteps / max(data.keys()))
             s4.set_xdata(fin_movement[:,0,ri])
             s4.set_ydata(fin_movement[:,1,ri])
 
         return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, s4, s5, s6, s7, s8, title,
 
-    ani = FuncAnimation(fig, animate, len(data.keys()), init_func=init, interval=20, blit=True, repeat=False)
+    ani = FuncAnimation(fig, animate, max(data.keys()), init_func=init, interval=20, blit=True, repeat=False)
     plt.subplots_adjust(wspace=0.1, hspace=0.1)
     plt.show()
     #ani.save('to_mg.gif', fps=30)
@@ -274,21 +285,24 @@ def fk_joint(config, joint_id):
 def init_trajectory():
     t = jnp.linspace(0, 1, N_timesteps)
     kernel_matrix = create_kernel_matrix(rbf_kernel, t, t)
-    alpha = jax.random.normal(jax.random.PRNGKey(0), (N_timesteps, N_joints))
 
     #jc = 0.5 * (start_config + goal_config)
     #a = jacobian(jc)[0]
     #unjac = jacobian(jc)[0].T @ jacobian(jc)[0]
     #jac = unjac / jnp.mean(unjac)
-    jac = jnp.eye(3) # + jax.random.normal(jax.random.PRNGKey(0), (3,3)) / 5
+    jac = jnp.eye(3) + jax.random.normal(jax.random.PRNGKey(0), (3,3)) / 5
 
-    lr = 0.002
+    #alpha = jax.random.normal(jax.random.PRNGKey(0), (N_timesteps, N_joints))
+    kmm = jnp.max(jnp.sum(kernel_matrix, axis=0)) * jnp.max(jnp.sum(jac, axis=0))
+    alpha = jnp.linspace(start_config/kmm, goal_config/kmm, N_timesteps) + jax.random.normal(jax.random.PRNGKey(0), (N_timesteps, N_joints)) / 100
+
+    lr = 0.01
     lambda_reg = 0.02
 
     #fit_trajectory_to_straigth_line
     y = straight_line.clone()
 
-    for iteration in range(500):
+    for iteration in range(20):
 
         # Evaluate fx using the current alpha.
         fx = evaluate(alpha, kernel_matrix, jac)
@@ -310,7 +324,8 @@ def compute_cartesian_cost(f):
     o_expand = jnp.expand_dims(obstacles, 2) @ jnp.ones((1, 1, t_len))
     o_reshape = o_expand.transpose((1,2,0))
 
-    cost_v = jnp.sum(0.8 / (0.5 + jnp.sqrt(jnp.sum(jnp.square(f_expand - o_reshape), axis=0))), axis=1)
+    #cost_v = jnp.sum(0.8 / (0.5 + jnp.sqrt(jnp.sum(jnp.square(f_expand - o_reshape), axis=0))), axis=1)
+    cost_v = jnp.sum(0.8 / (0.5 + jnp.linalg.norm(f_expand - o_reshape, axis=0)), axis=1)
     cost = jnp.max(cost_v) + jnp.sum(cost_v) / cost_v.shape[0]
     return cost
 
@@ -329,8 +344,6 @@ def derivative_cartesian_cost(f):
     return 0
 
 
-
-
 def compute_point_obstacle_cost(x,y):
     cost = np.zeros_like(x)
     for i in range(x.shape[0]):
@@ -340,42 +353,32 @@ def compute_point_obstacle_cost(x,y):
     return cost
 
 
-def compute_raw_trajectory_obstacle_cost(trajectory):
+def compute_trajectory_obstacle_cost(trajectory):
     f = fk(trajectory)
     f1 = fk_joint(trajectory, 1)
     f2 = fk_joint(trajectory, 2)
     return (compute_cartesian_cost(f) + compute_cartesian_cost(f1) + compute_cartesian_cost(f2)) / 3
 
 
-def compute_trajectory_obstacle_cost(alpha, km, jac):
-    trajectory = evaluate(alpha, km, jac)
-    return compute_raw_trajectory_obstacle_cost(trajectory)
-
-
-
 # constrained loss
-def start_goal_cost(alpha, km, jac):
-    trajectory = evaluate(alpha, km, jac)
+def start_goal_cost(trajectory):
     s = trajectory[0]
     g = trajectory[N_timesteps-1]
     loss = jnp.linalg.norm(s-start_config) + jnp.linalg.norm(g-goal_config)
     return loss
 
-def joint_limit_cost(alpha, km, jac):
-    trajectory = evaluate(alpha, km, jac)
+def joint_limit_cost(trajectory):
     loss = jnp.sum(jnp.exp(100*(trajectory - max_joint_position)) + jnp.exp(100*(-(trajectory - min_joint_position)))) / N_timesteps
     return loss
 
-def joint_velocity_limit_cost(alpha, km, jac):
-    trajectory = evaluate(alpha, km, jac)
+def joint_velocity_limit_cost(trajectory):
     joint_abs_velocity = jnp.abs(trajectory[1 : ] - trajectory[ : len(trajectory)-1]) * N_timesteps
     loss = jnp.sum(jnp.exp(100*(joint_abs_velocity - max_joint_velocity))) / N_timesteps
     return loss
 
 def compute_trajectory_cost(alpha, km, jac):
-    return compute_trajectory_obstacle_cost(alpha, km, jac) + lambda_constraint * (start_goal_cost(alpha, km, jac) + joint_limit_cost(alpha, km, jac) + joint_velocity_limit_cost(alpha, km, jac))
-
-
+    trajectory = evaluate(alpha, km, jac)
+    return compute_trajectory_obstacle_cost(trajectory) + lambda_constraint * (start_goal_cost(trajectory)) #+ joint_limit_cost(trajectory) + joint_velocity_limit_cost(trajectory))
 
 
 
@@ -390,27 +393,36 @@ losses[0] = 0
 
 print(jac)
 
-g = jax.grad(compute_trajectory_cost)
+
+l = jax.jit(compute_trajectory_cost)
+g = jax.jit(jax.grad(compute_trajectory_cost))
+
+st = time.time()
 
 for iter in range(max_iteration):
-    trajectory = evaluate(alpha, km, jac)
-    loss = compute_trajectory_cost(alpha, km, jac)
+
+    loss = l(alpha, km, jac)
 
     if iter % 10 == 0: 
         print(iter, loss.item())
 
+        data[iter] = evaluate(alpha, km, jac)
+        losses[iter] = loss
+
     # constrained gradient descent
     # alpha.data = (1 - lambda_reg * lr(iter)) * alpha.data - lr(iter) * alpha.grad.data
+    
+
     alpha_grad = g(alpha, km, jac)
 
     alpha = (1 - lambda_reg * lr(iter)) * alpha - lr(iter) * alpha_grad
 
-    data[iter+1] = evaluate(alpha, km, jac)
-    losses[iter+1] = loss
 
-print(jac)
+et = time.time()
+print("took", 1000*(et-st), "ms")
 
-create_animation(data, losses)
+
+#create_animation(data, losses)
 
 
 
