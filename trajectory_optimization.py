@@ -95,7 +95,7 @@ def plot_loss_contour(fig, ax):
 # Creates the animation.
 def create_animation(data, losses):
     
-    fig, (ax0, ax1, ax2) = plt.subplots(nrows=3)
+    fig, ((ax0, ax2), (ax1, ax3)) = plt.subplots(nrows=2, ncols=2)
     
     # Plot true hypothesis.
     plot_loss_contour(fig, ax0)
@@ -145,6 +145,12 @@ def create_animation(data, losses):
     ax1.plot(t, data[len(data)-1][:, 1].detach().numpy(), '-', color='grey')
     ax1.plot(t, data[len(data)-1][:, 2].detach().numpy(), '-', color='grey')
 
+
+    final_trajectory_point_cost = np.zeros(N_timesteps)
+    for i in range(N_timesteps):
+        final_trajectory_point_cost[i] = compute_raw_trajectory_obstacle_cost(data[0][i]).detach().numpy() / 2
+    s5, = ax3.plot(t, final_trajectory_point_cost, '-', color='black')
+
     s1, = ax1.plot(t, data[0][:, 0].detach().numpy(), '-', color='blue', label="joint 0 angle")
     s2, = ax1.plot(t, data[0][:, 1].detach().numpy(), '-', color='orange', label="joint 1 angle")
     s3, = ax1.plot(t, data[0][:, 2].detach().numpy(), '-', color='green', label="joint 2 angle")
@@ -163,24 +169,8 @@ def create_animation(data, losses):
 
     # Init only required for blitting to give a clean slate.
     def init():
-        cartesian_data = fk(data[0]).detach().numpy()
-        curr_fx.set_xdata(cartesian_data[0])
-        curr_fx.set_ydata(cartesian_data[1])
-
-        cartesian_data = fk_joint(data[0],1).detach().numpy()
-        curr_fx1.set_xdata(cartesian_data[0])
-        curr_fx1.set_ydata(cartesian_data[1])
-
-        cartesian_data = fk_joint(data[0],2).detach().numpy()
-        curr_fx2.set_xdata(cartesian_data[0])
-        curr_fx2.set_ydata(cartesian_data[1])
-
-        s1.set_ydata(data[0][:, 0].detach().numpy())
-        s2.set_ydata(data[0][:, 1].detach().numpy())
-        s3.set_ydata(data[0][:, 2].detach().numpy())
-
         title.set_text(title_text % (0, 0))
-        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, s4, title,
+        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, s4, s5, title,
 
     # Update at each iteration.
     def animate(iteration):
@@ -197,6 +187,12 @@ def create_animation(data, losses):
             curr_fx2.set_xdata(cartesian_data[0])
             curr_fx2.set_ydata(cartesian_data[1])
 
+            final_trajectory_point_cost = np.zeros(N_timesteps)
+            for i in range(N_timesteps):
+                final_trajectory_point_cost[i] = compute_raw_trajectory_obstacle_cost(data[iteration][i]).detach().numpy() / 2
+            s5.set_ydata(final_trajectory_point_cost)
+
+
             s1.set_ydata(data[iteration][:, 0].detach().numpy())
             s2.set_ydata(data[iteration][:, 1].detach().numpy())
             s3.set_ydata(data[iteration][:, 2].detach().numpy())
@@ -206,7 +202,7 @@ def create_animation(data, losses):
         s4.set_xdata(fin_movement[:,0,ri])
         s4.set_ydata(fin_movement[:,1,ri])
 
-        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, s4, title,
+        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, s4, s5, title,
 
     ani = FuncAnimation(fig, animate, len(data.keys()), init_func=init, interval=20, blit=True, repeat=False)
     plt.show()
@@ -220,14 +216,13 @@ def jacobian(config):
     c2 = config.reshape(-1, 3)
     c = torch.cumsum(c2,dim=1)
     
-    x1 = - torch.matmul(link_length, torch.sin(c).T)
-    x2 = - torch.matmul(link_length[1:], torch.sin(c[:, 1:]).T)
-    x3 = - torch.matmul(link_length[2:], torch.sin(c[:, 2:]).T)
-    y1 = torch.matmul(link_length, torch.cos(c).T)
-    y2 = torch.matmul(link_length[1:], torch.cos(c[:, 1:]).T)
-    y3 = torch.matmul(link_length[2:], torch.cos(c[:, 2:]).T)
+    x = - torch.mul(link_length, torch.sin(c))
+    reverse_cumsum_x = x + torch.sum(x,dim=1) - torch.cumsum(x,dim=1)
+
+    y = torch.mul(link_length, torch.cos(c))
+    reverse_cumsum_y = y + torch.sum(y,dim=1) - torch.cumsum(y,dim=1)
     
-    j = torch.Tensor([[x1, x2, x3], [y1, y2, y3]])
+    j = torch.stack((reverse_cumsum_x, reverse_cumsum_y))
     return j
 
 
@@ -264,7 +259,7 @@ def fk(config):
 
 
 def fk_joint(config, joint_id):
-    c2 = config[:, :joint_id].reshape(-1, joint_id)
+    c2 = config.reshape(-1, 3)[:, :joint_id].reshape(-1, joint_id)
     c = torch.cumsum(c2,dim=1)
     ll = link_length[:joint_id]
     pos_x = ll @ torch.cos(c).T
@@ -279,10 +274,10 @@ def init_trajectory():
     alpha = torch.randn((N_timesteps, N_joints), requires_grad=True)
 
     jc = 0.5 * (start_config + goal_config)
-    a = jacobian(jc)
-    unjac = jacobian(jc).T @ jacobian(jc)
+    a = jacobian(jc)[0]
+    unjac = jacobian(jc)[0].T @ jacobian(jc)[0]
     jac = unjac / torch.mean(unjac)
-    #jac = torch.eye(3)
+    #jac = torch.eye(3) + torch.randn((3,3)) / 10
 
     lr = 0.002
     lambda_reg = 0.02
@@ -304,6 +299,7 @@ def init_trajectory():
             alpha = 2 * lr * (y - fx) + (1 - 2 * lambda_reg * lr) * alpha
 
     alpha.requires_grad = True
+    jac.requires_grad = True
     return t, alpha, kernel_matrix, jac
 
 
@@ -330,12 +326,14 @@ def compute_cartesian_cost(f):
     b = b1.expand(d, t_len, o_len)
     cost_v = torch.sum(0.8 / (0.5 + torch.norm(a - b, dim=0)), dim=1)
     #cost = torch.sum(cost_v) / N_timesteps
-    cost = torch.max(cost_v) + torch.sum(cost_v) / N_timesteps
+    cost = torch.max(cost_v) + torch.sum(cost_v) / cost_v.shape[0]
     return cost
 
 def compute_raw_trajectory_obstacle_cost(trajectory):
     f = fk(trajectory)
-    return compute_cartesian_cost(f)
+    f1 = fk_joint(trajectory, 1)
+    f2 = fk_joint(trajectory, 2)
+    return (compute_cartesian_cost(f) + compute_cartesian_cost(f1) + compute_cartesian_cost(f2)) / 3
 
 
 def compute_trajectory_obstacle_cost(alpha, km, jac):
@@ -353,7 +351,7 @@ def start_goal_cost(alpha, km, jac):
 
 def joint_limit_cost(alpha, km, jac):
     trajectory = evaluate(alpha, km, jac)
-    loss = torch.sum(torch.exp(100*(trajectory - 1.5)) + torch.exp(100*(-trajectory - 0.5))) / N_timesteps
+    loss = torch.sum(torch.exp(100*(trajectory - 2)) + torch.exp(100*(-trajectory - 1))) / N_timesteps
     return loss
 
 
@@ -384,11 +382,19 @@ for iter in range(max_iteration):
     with torch.no_grad():
         if iter % 10 == 0: print(iter, loss.item())
         alpha.data = (1 - lambda_reg * lr(iter)) * alpha.data - lr(iter) * alpha.grad.data
+        jac.data = (1 - lambda_reg * lr(iter)) * jac.data - lr(iter) * jac.grad.data
         #alpha.data = alpha.data - lr(iter) * alpha.grad.data
         alpha.grad.zero_()
 
         data[iter+1] = evaluate(alpha, km, jac)
         losses[iter+1] = loss.detach().item()
+
+create_animation(data, losses)
+
+
+
+
+
 
 """
 data[0] = straight_line
@@ -406,11 +412,8 @@ for iter in range(200):
         straight_line.grad.zero_()
 
         data[iter + 1] = straight_line.detach().clone()
-"""
 
-
-
-"""
+        
 for iter in range(70):
     loss, li = compute_cartesian_cost(cart)
     loss.backward()
@@ -427,7 +430,6 @@ for iter in range(70):
 """
 
 
-create_animation(data, losses)
 
 
 exit(0)
