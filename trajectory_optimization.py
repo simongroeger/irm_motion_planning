@@ -14,8 +14,9 @@ rbf_var = 0.2
 
 max_iteration = 800
 lr_start = 0.001
-lr_end = 0.00005
+lr_end =   0.000001
 lambda_reg = 0.1
+lambda_constraint = 2
 
 def lr(iter):
     return lr_start + (lr_end - lr_start) * iter / max_iteration
@@ -94,19 +95,23 @@ def plot_loss_contour(fig, ax):
 # Creates the animation.
 def create_animation(data, losses):
     
-    fig, (ax0, ax1) = plt.subplots(nrows=2)
+    fig, (ax0, ax1, ax2) = plt.subplots(nrows=3)
     
     # Plot true hypothesis.
     plot_loss_contour(fig, ax0)
+    plot_loss_contour(fig, ax2)
 
     #plot start and goal
     start_cart = fk(start_config).detach().numpy()
     ax0.plot(start_cart[0], start_cart[1], 'o', color="yellow", label="start_config")
+    ax2.plot(start_cart[0], start_cart[1], 'o', color="yellow", label="start_config")
 
     goal_cart = fk(goal_config).detach().numpy()
     ax0.plot(goal_cart[0], goal_cart[1], 'o', color="gold", label="goal_config")
+    ax2.plot(goal_cart[0], goal_cart[1], 'o', color="gold", label="goal_config")
 
-    ax0.plot([0], [0], 'o', color="black", label="robot base")
+    ax0.plot([0], [0], 'o', color="black", label="robot base = joint 0")
+    ax2.plot([0], [0], 'o', color="black", label="robot base = joint 0")
 
     # plot workspace
     #circle1 = plt.Circle((0, 0), 3, color='black', fill=False)
@@ -123,11 +128,11 @@ def create_animation(data, losses):
 
 
     cartesian_data = fk_joint(data[0], 1).detach().numpy()
-    curr_fx1, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='blue', label="joint 0")
+    curr_fx1, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='blue', label="joint 1")
     cartesian_data = fk_joint(data[0], 2).detach().numpy()
-    curr_fx2, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='orange', label="joint 1")
+    curr_fx2, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='orange', label="joint 2")
     cartesian_data = fk(data[0]).detach().numpy()
-    curr_fx, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='darkgreen', label="joint 2")
+    curr_fx, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='darkgreen', label="ee")
     
 
     ax0.legend(loc='lower center')
@@ -143,6 +148,14 @@ def create_animation(data, losses):
     s1, = ax1.plot(t, data[0][:, 0].detach().numpy(), '-', color='blue', label="joint 0 angle")
     s2, = ax1.plot(t, data[0][:, 1].detach().numpy(), '-', color='orange', label="joint 1 angle")
     s3, = ax1.plot(t, data[0][:, 2].detach().numpy(), '-', color='green', label="joint 2 angle")
+
+
+    last_id = len(data.keys())-1 
+    fin_movement = np.zeros((4, 2, N_timesteps))
+    fin_movement[1] = fk_joint(data[last_id], 1).detach().numpy()
+    fin_movement[2] = fk_joint(data[last_id], 2).detach().numpy()
+    fin_movement[3] = fk_joint(data[last_id], 3).detach().numpy()
+    s4,  = ax2.plot(fin_movement[:,0,0], fin_movement[:,1,0], '-', color = 'black', label="robot")
 
     # Title.
     title_text = 'Trajectory Optimization \n Iteration %d, Loss %.2f'
@@ -167,7 +180,7 @@ def create_animation(data, losses):
         s3.set_ydata(data[0][:, 2].detach().numpy())
 
         title.set_text(title_text % (0, 0))
-        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, title,
+        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, s4, title,
 
     # Update at each iteration.
     def animate(iteration):
@@ -188,16 +201,38 @@ def create_animation(data, losses):
             s2.set_ydata(data[iteration][:, 1].detach().numpy())
             s3.set_ydata(data[iteration][:, 2].detach().numpy())
             title.set_text(title_text % (iteration, losses[iteration]))
-        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, title,
+        
+        ri = int(iteration * N_timesteps / len(data.keys()))
+        s4.set_xdata(fin_movement[:,0,ri])
+        s4.set_ydata(fin_movement[:,1,ri])
+
+        return curr_fx, curr_fx1, curr_fx2, s1, s2, s3, s4, title,
 
     ani = FuncAnimation(fig, animate, len(data.keys()), init_func=init, interval=20, blit=True, repeat=False)
     plt.show()
-    ani.save('to.gif', writer='imagemagick', fps=60)
+    #ani.save('to.gif', writer='imagemagick', fps=60)
 
 
 
 
-def poly_kernel(x_1, x_2):
+
+def jacobian(config):
+    c2 = config.reshape(-1, 3)
+    c = torch.cumsum(c2,dim=1)
+    
+    x1 = - torch.matmul(link_length, torch.sin(c).T)
+    x2 = - torch.matmul(link_length[1:], torch.sin(c[:, 1:]).T)
+    x3 = - torch.matmul(link_length[2:], torch.sin(c[:, 2:]).T)
+    y1 = torch.matmul(link_length, torch.cos(c).T)
+    y2 = torch.matmul(link_length[1:], torch.cos(c[:, 1:]).T)
+    y3 = torch.matmul(link_length[2:], torch.cos(c[:, 2:]).T)
+    
+    j = torch.Tensor([[x1, x2, x3], [y1, y2, y3]])
+    return j
+
+
+
+def rbf_kernel(x_1, x_2):
     return torch.exp( - (x_1 - x_2)**2 / (2 * rbf_var**2) )
 
 
@@ -206,21 +241,24 @@ def create_kernel_matrix(kernel_f, x, x2):
     kernel_matrix = torch.zeros((x.shape[0], x2.shape[0]))
     for i, x_i in enumerate(x):
         for j, x_j in enumerate(x2):
-            kernel_matrix[i][j] = kernel_f(x_i, x_j)
+            kernel_matrix[i][j] = kernel_f(x_i, x_j)    
     return kernel_matrix
 
-def evaluate(alpha, kernel_matrix):
-    return torch.matmul(kernel_matrix, alpha)
+def evaluate(alpha, kernel_matrix, jac):
+    return kernel_matrix @ alpha @ jac
 
-def eval_any(alpha, kernel_f, support_x, eval_x):
-    return evaluate(alpha, create_kernel_matrix(kernel_f, eval_x, support_x))
-    
+def eval_any(alpha, kernel_f, support_x, eval_x, jac):
+    return evaluate(alpha, create_kernel_matrix(kernel_f, eval_x, support_x), jac)
+
+def eval_any_single(alpha, kernel_f, support_x, eval_x, jac):
+    return kernel_f(support_x, eval_x) @ jac @ alpha  
+
 
 def fk(config):
     c2 = config.reshape(-1, 3)
     c = torch.cumsum(c2,dim=1)
-    pos_x = torch.matmul(link_length, torch.cos(c).T)
-    pos_y = torch.matmul(link_length, torch.sin(c).T)
+    pos_x = link_length @ torch.cos(c).T
+    pos_y = link_length @ torch.sin(c).T
     pos = torch.stack((pos_x, pos_y))
     return pos
 
@@ -229,16 +267,22 @@ def fk_joint(config, joint_id):
     c2 = config[:, :joint_id].reshape(-1, joint_id)
     c = torch.cumsum(c2,dim=1)
     ll = link_length[:joint_id]
-    pos_x = torch.matmul(ll, torch.cos(c).T)
-    pos_y = torch.matmul(ll, torch.sin(c).T)
+    pos_x = ll @ torch.cos(c).T
+    pos_y = ll @ torch.sin(c).T
     pos = torch.stack((pos_x, pos_y))
     return pos
 
 
 def init_trajectory():
     t = torch.linspace(0, 1, N_timesteps)
-    kernel_matrix = create_kernel_matrix(poly_kernel, t, t)
+    kernel_matrix = create_kernel_matrix(rbf_kernel, t, t)
     alpha = torch.randn((N_timesteps, N_joints), requires_grad=True)
+
+    jc = 0.5 * (start_config + goal_config)
+    a = jacobian(jc)
+    unjac = jacobian(jc).T @ jacobian(jc)
+    jac = unjac / torch.mean(unjac)
+    #jac = torch.eye(3)
 
     lr = 0.002
     lambda_reg = 0.02
@@ -250,7 +294,7 @@ def init_trajectory():
         for iteration in range(500):
 
             # Evaluate fx using the current alpha.
-            fx = evaluate(alpha, kernel_matrix)
+            fx = evaluate(alpha, kernel_matrix, jac)
 
             # Compute loss (just for logging!).
             loss = torch.sum(torch.square(y - fx)) + lambda_reg * torch.sum((torch.matmul(alpha.T, fx)))
@@ -260,7 +304,7 @@ def init_trajectory():
             alpha = 2 * lr * (y - fx) + (1 - 2 * lambda_reg * lr) * alpha
 
     alpha.requires_grad = True
-    return t, alpha, kernel_matrix
+    return t, alpha, kernel_matrix, jac
 
 
 
@@ -271,7 +315,7 @@ def compute_point_obstacle_cost(x,y):
             point = np.array([x[i,j], y[i,j]])
             c = 0
             for o in obstacles.detach().numpy():
-                c += 1.0 / (0.5 + np.linalg.norm(point - o)**2)
+                c += 0.8  / (0.5 + np.linalg.norm(point - o))
             cost[i,j] = c
     return cost
 
@@ -294,45 +338,56 @@ def compute_raw_trajectory_obstacle_cost(trajectory):
     return compute_cartesian_cost(f)
 
 
-def compute_trajectory_obstacle_cost(alpha, km):
-    trajectory = evaluate(alpha, km)
+def compute_trajectory_obstacle_cost(alpha, km, jac):
+    trajectory = evaluate(alpha, km, jac)
     return compute_raw_trajectory_obstacle_cost(trajectory)
 
 
-def start_goal_cost(alpha, km):
-    trajectory = evaluate(alpha, km)
+def start_goal_cost(alpha, km, jac):
+    trajectory = evaluate(alpha, km, jac)
     s = trajectory[0]
     g = trajectory[N_timesteps-1]
-    loss = 2 * (torch.norm(s-start_config) + torch.norm(g-goal_config))
+    loss = torch.norm(s-start_config) + torch.norm(g-goal_config)
     return loss
 
 
-def compute_trajectory_cost(alpha, km):
-    return compute_trajectory_obstacle_cost(alpha, km) + start_goal_cost(alpha, km)
+def joint_limit_cost(alpha, km, jac):
+    trajectory = evaluate(alpha, km, jac)
+    loss = torch.sum(torch.exp(100*(trajectory - 1.5)) + torch.exp(100*(-trajectory - 0.5))) / N_timesteps
+    return loss
+
+
+def compute_trajectory_cost(alpha, km, jac):
+    #print(compute_trajectory_obstacle_cost(alpha, km).item(), start_goal_cost(alpha, km).item(), joint_limit_cost(alpha, km).item())
+    return compute_trajectory_obstacle_cost(alpha, km, jac) + lambda_constraint * start_goal_cost(alpha, km, jac) #+ lambda_constraint * joint_limit_cost(alpha, km, jac)
 
 
 
 
 
 
-t, alpha, km = init_trajectory()
+t, alpha, km, jac = init_trajectory()
 
 data = {}
 losses = {}
 
-data[0] = evaluate(alpha, km)
+data[0] = evaluate(alpha, km, jac)
 losses[0] = 0
 
+
+
+
 for iter in range(max_iteration):
-    loss = compute_trajectory_cost(alpha, km)
+    trajectory = evaluate(alpha, km, jac)
+    loss = compute_trajectory_cost(alpha, km, jac)
     loss.backward()
     with torch.no_grad():
         if iter % 10 == 0: print(iter, loss.item())
-        alpha.data = (1 + lambda_reg * lr(iter)) * alpha.data - lr(iter) * alpha.grad.data
+        alpha.data = (1 - lambda_reg * lr(iter)) * alpha.data - lr(iter) * alpha.grad.data
         #alpha.data = alpha.data - lr(iter) * alpha.grad.data
         alpha.grad.zero_()
 
-        data[iter+1] = evaluate(alpha, km)
+        data[iter+1] = evaluate(alpha, km, jac)
         losses[iter+1] = loss.detach().item()
 
 """
@@ -383,7 +438,7 @@ plt.plot(start_cart[0], start_cart[1], 'o', color="yellow")
 goal_cart = fk(goal_config).detach().numpy()
 plt.plot(goal_cart[0], goal_cart[1], 'o', color="orange")
 
-a = fk(evaluate(alpha, km)).detach().numpy()
+a = fk(evaluate(alpha, km, jac)).detach().numpy()
 plt.plot(a[0], a[1])
 
 b = fk(straight_line).detach().numpy()
