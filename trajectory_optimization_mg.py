@@ -296,23 +296,12 @@ def init_trajectory():
     kmm = jnp.max(jnp.sum(kernel_matrix, axis=0)) * jnp.max(jnp.sum(jac, axis=0))
     alpha = jnp.linspace(start_config/kmm, goal_config/kmm, N_timesteps) + jax.random.normal(jax.random.PRNGKey(0), (N_timesteps, N_joints)) / 100
 
-    lr = 0.01
+    #fit_trajectory_to_straigth_line 
+    alpha = np.linalg.solve(kernel_matrix, straight_line @ np.linalg.inv(jac))
     lambda_reg = 0.02
-
-    #fit_trajectory_to_straigth_line
-    y = straight_line.clone()
-
-    for iteration in range(20):
-
-        # Evaluate fx using the current alpha.
-        fx = evaluate(alpha, kernel_matrix, jac)
-
-        # Compute loss (just for logging!).
-        loss = jnp.sum(jnp.square(y - fx)) + lambda_reg * jnp.sum((jnp.matmul(alpha.T, fx)))
-        print('Init %d: Loss = %0.3f' % (iteration, loss))
-
-        # Compute gradient and update.
-        alpha = 2 * lr * (y - fx) + (1 - 2 * lambda_reg * lr) * alpha
+    fx = evaluate(alpha, kernel_matrix, jac)
+    loss = jnp.sum(jnp.square(straight_line - fx)) + lambda_reg * jnp.sum((jnp.matmul(alpha.T, fx)))
+    print('Init loss = %0.3f' % ( loss))
 
     return t, alpha, kernel_matrix, jac
 
