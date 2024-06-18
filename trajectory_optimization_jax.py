@@ -235,10 +235,10 @@ def jacobian(config):
     c2 = config.reshape(-1, 3)
     c = jnp.cumsum(c2,axis=1)
     
-    x = - jnp.mul(link_length, jnp.sin(c))
+    x = - jnp.multiply(link_length, jnp.sin(c))
     reverse_cumsum_x = x + jnp.sum(x,axis=1) - jnp.cumsum(x,axis=1)
 
-    y = jnp.mul(link_length, jnp.cos(c))
+    y = jnp.multiply(link_length, jnp.cos(c))
     reverse_cumsum_y = y + jnp.sum(y,axis=1) - jnp.cumsum(y,axis=1)
     
     j = jnp.stack((reverse_cumsum_x, reverse_cumsum_y))
