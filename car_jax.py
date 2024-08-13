@@ -21,71 +21,23 @@ os.environ['TF_XLA_FLAGS'] = (
 )
 
 #param
-N_timesteps = 100
+N_timesteps = 20
 N_joints = 3
 
 rbf_var = 0.2
 
-max_iteration = 500
-lr_start = 0.005
-lr_end =   0.0005
-lambda_reg = 0.1
+max_iteration = 3
+lr_start = 0.001
+lr_end =   0.001
+lambda_reg = 0.4
 lambda_constraint = 2
-lambda_2_constraint = 0.3
 
-trajectory_max_duration = 3
-max_joint_velocity = 3
-min_joint_position = -1
-max_joint_position = 2
-mean_joint_position = 0.5*(max_joint_position + min_joint_position)
-std_joint_position = max_joint_position - mean_joint_position
-
-obs_1 = jnp.array([     
-                    [ 2, -3],
-                    [-2, 2],
-                    [3, 3],
-                    [-1, -2],
-                    [-2, 1],
-                    [-1, -1],
-                    [-2, -3],
-                    [-2, 0],
-                    [1, 3],
-                    [3, 2],
-                    [2, 3]
-                ])
-
-
-obs_2 = jnp.array([     
-                    [3, 2],
-                    [3, 3],
-                    [3, 1],
-                    [2, 1],
-                    [1, 1],
-                    [-1, -1],
-                    [-1, 0],
-                    [-1, 1],
-                    [2, 2]
-                    ])
-
-obstacles = obs_1
-
-link_length = jnp.array([1.5, 1.0, 0.5])
-
-start_config = jnp.array([0.0, 0.0, 0.0])
-goal_config = jnp.array([1.2, 0.8, 0.3])
-
-
-straight_line = jnp.stack((
-    jnp.linspace(start_config[0], goal_config[0], N_timesteps),
-    jnp.linspace(start_config[1], goal_config[1], N_timesteps),
-    jnp.linspace(start_config[2], goal_config[2], N_timesteps)    
-)).T
-
+track = jnp.array(np.loadtxt("motion_planning.txt")[:,:2])
 
 def lr(iter):
     return lr_start + (lr_end - lr_start) * iter / max_iteration
 
-
+"""
 def plot_loss_contour(fig, axs):
 
     # make these smaller to increase the resolution
@@ -120,6 +72,7 @@ def create_animation(data, losses):
     
     fig, ((ax0, ax2, ax4), (ax1, ax5, ax3)) = plt.subplots(nrows=2, ncols=3)
     last_id = max(data.keys())
+    t = jnp.linspace(0, 1, N_timesteps)
 
     # Plot 2d workspace cost potential
     plot_loss_contour(fig, [ax0, ax2])
@@ -229,7 +182,7 @@ def create_animation(data, losses):
             s2.set_ydata(data[iteration][:, 1])
             s3.set_ydata(data[iteration][:, 2])
 
-            joint_velocity = (data[iteration][1 : ] - data[iteration][ : len(data[iteration])-1]) * N_timesteps / trajectory_max_duration
+            joint_velocity = (data[iteration][1 : ] - data[iteration][ : len(data[iteration])-1]) * N_timesteps
             s6.set_ydata(joint_velocity[:, 0])
             s7.set_ydata(joint_velocity[:, 1])
             s8.set_ydata(joint_velocity[:, 2])
@@ -246,22 +199,7 @@ def create_animation(data, losses):
     plt.show()
     #ani.save('to_mg.gif', fps=30)
 
-
-
-
-
-def jacobian(config):
-    c2 = config.reshape(-1, 3)
-    c = jnp.cumsum(c2,axis=1)
-    
-    x = - jnp.multiply(link_length, jnp.sin(c))
-    reverse_cumsum_x = x + jnp.sum(x,axis=1) - jnp.cumsum(x,axis=1)
-
-    y = jnp.multiply(link_length, jnp.cos(c))
-    reverse_cumsum_y = y + jnp.sum(y,axis=1) - jnp.cumsum(y,axis=1)
-    
-    j = jnp.stack((reverse_cumsum_x, reverse_cumsum_y))
-    return j
+"""
 
 
 
@@ -282,151 +220,91 @@ def eval_any(alpha, kernel_f, support_x, eval_x, jac):
     return evaluate(alpha, create_kernel_matrix(kernel_f, eval_x, support_x), jac)
 
 
-def fk(config):
-    c2 = config.reshape(-1, 3)
-    c = jnp.cumsum(c2,axis=1)
-    pos_x = link_length @ jnp.cos(c).T
-    pos_y = link_length @ jnp.sin(c).T
-    pos = jnp.stack((pos_x, pos_y))
-    return pos
-
-
-def fk_joint(config, joint_id):
-    c2 = config.reshape(-1, 3)[:, :joint_id].reshape(-1, joint_id)
-    c = jnp.cumsum(c2,axis=1)
-    ll = link_length[:joint_id]
-    pos_x = ll @ jnp.cos(c).T
-    pos_y = ll @ jnp.sin(c).T
-    pos = jnp.stack((pos_x, pos_y))
-    return pos
-
 
 def init_trajectory():
-    t = jnp.linspace(0, 1, N_timesteps)
+
+    sum = 0
+    t = [0]
+    for i in range(1, len(track)):
+        dist = jnp.linalg.norm(track[i] - track[i-1])
+        sum += dist
+        t.append(sum)
+    
+    t = jnp.array(t)
+    t /= sum
+
     kernel_matrix = create_kernel_matrix(rbf_kernel, t, t)
-    jac = jnp.eye(3) + jax.random.normal(jax.random.PRNGKey(0), (3,3)) / 3
+    jac = jnp.eye(2) + jax.random.normal(jax.random.PRNGKey(0), (2,2)) / 5
 
     #fit_trajectory_to_straigth_line 
-    alpha = np.linalg.solve(kernel_matrix, straight_line @ np.linalg.inv(jac))
+    alpha = jnp.linalg.solve(kernel_matrix, track @ jnp.linalg.inv(jac))
+
     lambda_reg = 0.02
     fx = evaluate(alpha, kernel_matrix, jac)
-    loss = jnp.sum(jnp.square(straight_line - fx)) + lambda_reg * jnp.sum((jnp.matmul(alpha.T, fx)))
+    loss = jnp.sum(jnp.linalg.norm(track - fx)) #+ lambda_reg * jnp.sum((jnp.matmul(alpha.T, fx)))
     print('Init loss = %0.3f' % ( loss))
 
     return t, alpha, kernel_matrix, jac
 
 
-def compute_cartesian_cost(f):
-    t_len = f.shape[1]
-    o_len = obstacles.shape[0]
-    f_expand = jnp.expand_dims(f, 2) @ jnp.ones((1, 1, o_len))
-    o_expand = jnp.expand_dims(obstacles, 2) @ jnp.ones((1, 1, t_len))
-    o_reshape = o_expand.transpose((1,2,0))
-
-    #cost_v = jnp.sum(0.8 / (0.5 + jnp.sqrt(jnp.sum(jnp.square(f_expand - o_reshape), axis=0))), axis=1)
-    cost_v = jnp.sum(0.8 / (0.5 + jnp.linalg.norm(f_expand - o_reshape, axis=0)), axis=1)
-    cost = jnp.max(cost_v) + jnp.sum(cost_v) / cost_v.shape[0]
-    return cost
-
-def derivative_cartesian_cost(f):
-    t_len = f.shape[1]
-    o_len = obstacles.shape[0]
-    f_expand = jnp.expand_dims(f, 2) @ jnp.ones((1, 1, o_len))
-    o_expand = jnp.expand_dims(obstacles, 2) @ jnp.ones((1, 1, t_len))
-    o_reshape = o_expand.transpose((1,2,0))
-
-    # cost_v = jnp.sum(0.8 / (0.5 + jnp.sum(jnp.square(f_expand - o_reshape), axis=0)), axis=1)
-    # cost = jnp.max(cost_v) + jnp.sum(cost_v) / cost_v.shape[0]
-    
-    a = jnp.sum(-0.8 / jnp.square(0.5 + jnp.sum(2 * (f_expand - o_reshape), axis=0)), axis=1)
-
-    return 0
-
-
-def compute_point_obstacle_cost(x,y):
-    cost = np.zeros_like(x)
-    for i in range(x.shape[0]):
-        for j in range(x.shape[1]):
-            point = jnp.array([[x[i,j]], [y[i,j]]])
-            cost[i,j] = compute_cartesian_cost(point).item() / 2
-    return cost
-
-
-def compute_trajectory_obstacle_cost(trajectory):
-    f = fk(trajectory)
-    f1 = fk_joint(trajectory, 1)
-    f2 = fk_joint(trajectory, 2)
-    return (compute_cartesian_cost(f) + compute_cartesian_cost(f1) + compute_cartesian_cost(f2)) / 3
-
-
-# constrained loss
-def start_goal_cost(trajectory):
-    s = trajectory[0]
-    g = trajectory[N_timesteps-1]
-    loss = jnp.sum(jnp.square(s-start_config)) + jnp.sum(jnp.square(g-goal_config))
-    return loss
-
-def joint_limit_cost(trajectory):
-    loss = jnp.sum(jnp.square((trajectory - mean_joint_position) / std_joint_position)) / N_timesteps
-    return loss
-
-def joint_velocity_limit_cost(trajectory):
-    joint_velocity = (trajectory[1 : ] - trajectory[ : len(trajectory)-1]) * N_timesteps / trajectory_max_duration
-    loss = jnp.sum(jnp.square(joint_velocity / max_joint_velocity)) / N_timesteps
-    return loss
-
 def compute_trajectory_cost(alpha, km, jac):
     trajectory = evaluate(alpha, km, jac)
-    return compute_trajectory_obstacle_cost(trajectory) + lambda_constraint * (start_goal_cost(trajectory)) + lambda_2_constraint * ( joint_limit_cost(trajectory) + joint_velocity_limit_cost(trajectory))
+    loss = jnp.sum(jnp.exp(10*(jnp.abs(trajectory - track)- 1 )))
+    return loss
 
 
 
 
-t, alpha, km, jac = init_trajectory()
+def main():
 
-data = {}
-losses = {}
+    t, alpha, km, jac = init_trajectory()
 
-data[0] = evaluate(alpha, km, jac)
-losses[0] = 0
+    data = {}
+    losses = {}
 
-print(jac)
+    data[0] = evaluate(alpha, km, jac)
+    losses[0] = 0
+
+    l = jax.jit(compute_trajectory_cost)
+    g = jax.jit(jax.grad(compute_trajectory_cost))
 
 
-l = jax.jit(compute_trajectory_cost)
-g = jax.jit(jax.grad(compute_trajectory_cost))
+    for iter in range(0):
+
+        loss = l(alpha, km, jac)
+
+        if iter % 1 == 0: 
+            print(iter, loss)
+
+            data[iter] = evaluate(alpha, km, jac)
+            losses[iter] = loss
+
+        alpha_grad = g(alpha, km, jac)
+
+        alpha = (1 - lambda_reg * lr(iter)) * alpha - lr(iter) * alpha_grad
+
+
+    return data, losses, t, alpha, km, jac
+
 
 st = time.time()
 
-last_loss = 1000
-for iter in range(max_iteration):
-
-    loss = l(alpha, km, jac)
-
-
-    if iter % 10 == 0: 
-        print(iter, loss.item())
-
-        data[iter] = evaluate(alpha, km, jac)
-        losses[iter] = loss
-
-        if abs(last_loss - loss) < 0.002:
-            break
-
-        last_loss = loss
-    
-    alpha_grad = g(alpha, km, jac)
-
-    alpha = (1 - lambda_reg * lr(iter)) * alpha - lr(iter) * alpha_grad
-
+m = jax.jit(main)
+data, losses, t, alpha, km, jac = main()
 
 et = time.time()
 print("took", 1000*(et-st), "ms")
 
+#create_animation(data, losses)
 
-np_trajectory = np.array(evaluate(alpha, km, jac))
-np.savetxt("trajectory_result.txt", np_trajectory)
-create_animation(data, losses)
+trajectory = evaluate(alpha, km, jac)
+
+plt.plot(trajectory[:, 1], trajectory[:, 0], label="trajectory")
+plt.plot(track[:, 1], track[:, 0], label="track")
+plt.legend()
+plt.show()
+
+
 
 
 
