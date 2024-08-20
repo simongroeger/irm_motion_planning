@@ -35,8 +35,8 @@
 			</button>
 
 			<div id="navigation" class="collapse navbar-collapse flex-column" >
-				<div class="profile-section pt-3 pt-lg-0">
-				    <img class="profile-image mb-3 rounded-circle mx-auto" src="assets/images/profile.png" alt="image" >			
+				<div class="profile-section pt-3 pt-lg-4">
+				    <img class="profile-image mb-3 rounded-circle mx-auto" src="assets/images/profile.jpg" alt="image" >			
 					
 					<div class="bio mb-3">Hi, my name is Simon Gröger. I am a student in my computer science master at TU Darmstadt and currently working on a  trajectory optimization project.<br></div><!--//bio-->
 					<hr> 
@@ -74,15 +74,26 @@ Actual content
 </figure>
 
 
-<p> Ich bin ein Text. </p>
+<p> 
+	In this project the goal is a fast motion planning approach using the Reproducing Kernel Hilbert Space. 
+	This approach may lead to better results as the problem formulation has fewer local optima.
+	
+</p>
 
 <h3 class="mt-5 mb-3">Introduction</h3>
 
-<p> Ich bin ein Text. </p>
+<p>
+	Erklärung was ein RKHS ist
+
+</p>
 
 <h3 class="mt-5 mb-3">Math</h3>
 
-<p> Ich bin ein Text. </p>
+<p> 
+	Trajectory Formulation
+	Loss Formulation
+	constrained Gradient update
+</p>
 
 <h4 class="mt-5 mb-3">Equation Derivation</h4>
 <h4 class="mt-5 mb-3">Algorithmic Pipeline Derivation</h4>
@@ -93,10 +104,19 @@ Actual content
 <h3 class="mt-5 mb-3">Experiments</h3>
 <p> Videos</p>
 
-<p> Ich bin ein Text. </p>
+<p> Runtime for different problems, GD / BLSGD, joint constraints </p>
 
-<p> Insights on failed ideas. </p>
+<h5 class="mt-5 mb-3">Insights on failed ideas</h5>
 
+<p> 
+	Adding the max part of the loss was very crucial as the model was else stuck in a local optima, seen in figure xy, and didnt converge to the current solution.
+
+</p>
+
+<p>
+	The original paper sugested using a Jacobian matrix in the trajectory formulation to enable joint optimization with communication across different joints influencing each other. In our experiments the optimization didnt work anymore if we included the actual Jacobian matrix as the magnitude of the entries was very different. Naturally the elements for the first joint are larger than those of the last joints, which makes any optimization very hard.
+	We therefore used a identity matrix and added N(0, 1/3) to the elements to enable random cross joint communication.
+</p>
 
 <h3 class="mt-5 mb-3">Conclusion</h3>
 

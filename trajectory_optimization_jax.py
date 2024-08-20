@@ -21,14 +21,21 @@ os.environ['TF_XLA_FLAGS'] = (
 )
 
 #param
-N_timesteps = 100
+N_timesteps = 10
 N_joints = 3
 
 rbf_var = 0.2
 
-max_iteration = 500
+useBLS = True
+
+max_iteration = 100
+
 lr_start = 0.005
 lr_end =   0.0005
+
+bls_lr_start = 0.1
+bls_lr_end =   0.005
+
 lambda_reg = 0.1
 lambda_constraint = 2
 lambda_2_constraint = 0.3
@@ -84,6 +91,9 @@ straight_line = jnp.stack((
 
 def lr(iter):
     return lr_start + (lr_end - lr_start) * iter / max_iteration
+
+def bls_start_lr_iter(iter):
+    return bls_lr_start + (bls_lr_end - bls_lr_start) * iter / max_iteration
 
 
 def plot_loss_contour(fig, axs):
@@ -398,26 +408,72 @@ g = jax.jit(jax.grad(compute_trajectory_cost))
 
 st = time.time()
 
-last_loss = 1000
-for iter in range(max_iteration):
+if not useBLS:
+    last_loss = 1000
+    for iter in range(max_iteration):
 
-    loss = l(alpha, km, jac)
+        loss = l(alpha, km, jac)
 
+        if iter % 10 == 0: 
+            print(iter, loss.item())
 
-    if iter % 10 == 0: 
-        print(iter, loss.item())
+            data[iter] = evaluate(alpha, km, jac)
+            losses[iter] = loss
 
-        data[iter] = evaluate(alpha, km, jac)
-        losses[iter] = loss
+            if abs(last_loss - loss) < 0.002:
+                break
 
-        if abs(last_loss - loss) < 0.002:
-            break
+            last_loss = loss
+        
+        alpha_grad = g(alpha, km, jac)
 
-        last_loss = loss
-    
-    alpha_grad = g(alpha, km, jac)
+        alpha = (1 - lambda_reg * lr(iter)) * alpha - lr(iter) * alpha_grad
 
-    alpha = (1 - lambda_reg * lr(iter)) * alpha - lr(iter) * alpha_grad
+else:
+   
+    last_loss = 1000
+    for iter in range(max_iteration):
+
+        loss = l(alpha, km, jac)
+
+        if iter % 10 == 0: 
+            print(iter, loss.item())
+
+            data[iter] = evaluate(alpha, km, jac)
+            losses[iter] = loss
+
+            if abs(last_loss - loss) < 0.001:
+                break
+
+            last_loss = loss
+        
+        alpha_grad = g(alpha, km, jac)
+
+        #bls
+        bls_lr = bls_start_lr_iter(iter)
+        bls_alpha = 0.3
+        bls_beta = 0.8
+
+        min_loss = loss
+        min_bls_lr = bls_lr
+
+        print("iter", iter, "loss", loss)
+        for j in range(20):
+            new_alpha = (1 - lambda_reg * bls_lr) * alpha - bls_lr * alpha_grad
+            new_loss = l(new_alpha, km, jac)
+            required_loss = loss - bls_lr * bls_alpha * jnp.sum(jnp.dot(alpha_grad.T, alpha_grad))
+            print(" bls_iter", j, "bls_lr", bls_lr, "loss", new_loss, "req loss", required_loss)
+            if new_loss < min_loss:
+                min_loss = new_loss
+                min_bls_lr = bls_lr
+
+            if new_loss > required_loss:
+                bls_lr *= bls_beta
+            else:
+                break
+
+        alpha = (1 - lambda_reg * min_bls_lr) * alpha - min_bls_lr * alpha_grad
+
 
 
 et = time.time()
@@ -426,7 +482,7 @@ print("took", 1000*(et-st), "ms")
 
 np_trajectory = np.array(evaluate(alpha, km, jac))
 np.savetxt("trajectory_result.txt", np_trajectory)
-create_animation(data, losses)
+#create_animation(data, losses)
 
 
 
