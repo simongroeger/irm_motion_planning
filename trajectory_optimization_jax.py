@@ -10,6 +10,7 @@ from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation
 
+from functools import partial
 
 import os
 os.environ['TF_XLA_FLAGS'] = (
@@ -31,19 +32,21 @@ rbf_var = 0.1
 
 useBLS = True
 
-max_iteration = 50
+max_iteration = 100
 
 lr_start = 0.0002
 lr_end =   0.000001
 
 #bls
-bls_lr_start = 1.0
-bls_alpha = 0.2
+bls_lr_start = 0.1
+bls_alpha = 0.1
 bls_beta_minus = 0.5
 bls_beta_plus = 1.5
 bls_max_iter = 100
 
 big_iter_constraint_change = 1.5
+
+loop_loss_reduction = 0.001
 
 lambda_reg = 0.1
 lambda_constraint = 0.5
@@ -60,10 +63,10 @@ std_joint_position = max_joint_position - mean_joint_position
 link_length = jnp.array([1.5, 1.0, 0.5])
 
 start_config = jnp.array([0.0, 0.0, 0.0])
-goal_config = jnp.array([1.2, 0.8, 0.3])
+goal_config = jnp.array([1.2, 1.0, 0.3])
 max_start_goal_velocity = 0.5
-final_max_start_goal_velocity = 0.01
-max_start_goal_distance = 0.2
+final_max_start_goal_velocity = 0.05
+max_start_goal_distance = 0.1
 final_max_start_goal_distance = 0.01
 
 obs_1 = jnp.array([     
@@ -95,7 +98,8 @@ obs_2 = jnp.array([
 
 obstacles = obs_1
 
-c = 1.0 / (1 + jnp.exp(4 - 8*jnp.linspace(0, 1, N_timesteps)))
+c = 2.0 / (2 + jnp.exp(4 - 8*jnp.linspace(0, 1, N_timesteps)))
+c = 3*jnp.linspace(0, 1, N_timesteps)**2 - 2* jnp.linspace(0, 1, N_timesteps) ** 3
 
 straight_line = jnp.stack((
     start_config[0] + (goal_config[0] - start_config[0]) * c,
@@ -355,7 +359,7 @@ def init_trajectory():
     t = jnp.linspace(0, 1, N_timesteps)
     kernel_matrix = create_kernel_matrix(rbf_kernel, t, t)
     dkm = create_kernel_matrix(d_rbf_kernel, t, t)
-    jac = jnp.eye(3) + jax.random.normal(jax.random.PRNGKey(0), (3,3)) / 3
+    jac = jnp.eye(3) + jax.random.normal(jax.random.PRNGKey(0), (3,3)) / 5
 
     #fit_trajectory_to_straigth_line 
     alpha = np.linalg.solve(kernel_matrix, straight_line @ np.linalg.inv(jac))
@@ -418,14 +422,14 @@ def start_goal_velocity_constraint_fulfilled(joint_velocity, finalConstraint=Fal
     return True
 
 def joint_position_constraint(trajectory):
-    if trajectory.any() > max_joint_position:
+    if trajectory.max() > max_joint_position:
         return False 
-    if trajectory.any() < min_joint_position:
+    if trajectory.min() < min_joint_position:
         return False 
     return True
 
 def joint_velocity_constraint(joint_velocity):
-    if jnp.abs(joint_velocity).any() > max_joint_velocity:
+    if jnp.abs(joint_velocity).max() > max_joint_velocity:
         return False
     return True
 
@@ -517,8 +521,10 @@ last_loss = 1000
 l = jax.jit(compute_trajectory_cost)
 g = jax.jit(jax.grad(l))
 
+#TODO
 l = compute_trajectory_cost
 g = jax.grad(l)
+
 
 st = time.time()
 
@@ -595,7 +601,7 @@ else:
                 break
 
         # end of current minimzation
-        if abs(loss - new_loss) < 0.002:
+        if abs(loss - new_loss) < loop_loss_reduction or iter > last_big_iter_increase + 15:
             print("abort too small loss change")
             if constraintsFulfilled(evaluate(alpha, km, jac), finalConstraint=True, verbose=True):
                 break
