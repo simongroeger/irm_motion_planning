@@ -10,8 +10,6 @@ from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation
 
-from functools import partial
-
 import os
 os.environ['TF_XLA_FLAGS'] = (
     '--xla_gpu_enable_triton_softmax_fusion=true '
@@ -38,13 +36,13 @@ lr_start = 0.0001
 lr_end =   0.0000001
 
 #bls
-bls_lr_start = 0.1
-bls_alpha = 0.1
+bls_lr_start = 0.2
+bls_alpha = 0.01
 bls_beta_minus = 0.5
 bls_beta_plus = 1.2
-bls_max_iter = 100
+bls_max_iter = 20
 
-big_iter_constraint_change = 5
+lambda_constraint_increase = 10
 
 loop_loss_reduction = 0.001
 
@@ -53,7 +51,7 @@ lambda_constraint = 0.5
 lambda_2_constraint = 0.1
 lambda_max_cost = 0.8
 
-trajectory_duration = 3
+trajectory_duration = 2
 max_joint_velocity = 3
 min_joint_position = -1
 max_joint_position = 2
@@ -83,22 +81,20 @@ obs_1 = jnp.array([
 
 
 obs_2 = jnp.array([     
-                    [3, 2],
                     [3, 3],
+                    [3, 2],
                     [3, 1],
+                    [2, 3],
+                    [2.2, 2.2],
                     [2, 1],
+                    [1, 3],
+                    [1, 2],
                     [1, 1],
-                    [-1, -1],
-                    [-1, 0],
-                    [-1, 1],
-                    [2, 2]
                     ])
 
 obstacles = obs_1
 
-c = 2.0 / (2 + jnp.exp(4 - 8*jnp.linspace(0, 1, N_timesteps)))
 c = 3*jnp.linspace(0, 1, N_timesteps)**2 - 2* jnp.linspace(0, 1, N_timesteps) ** 3
-
 straight_line = jnp.stack((
     start_config[0] + (goal_config[0] - start_config[0]) * c,
     start_config[1] + (goal_config[1] - start_config[1]) * c,
@@ -239,7 +235,7 @@ def create_animation(km, dkm, jac, data, losses, aux, u_loss):
 
     # Title.
     title_text = 'Trajectory Optimization \n Iteration %d, Loss %.2f'
-    title = ax0.text(0.8, 0.9, title_text, horizontalalignment='center', verticalalignment='center', transform=fig.transFigure, fontsize=14)
+    title = ax3.text(0.5, 0.5, title_text, horizontalalignment='center', verticalalignment='center', transform=fig.transFigure, fontsize=14)
 
     ax0.legend(loc='lower left')
     ax2.legend(loc='lower left', title="final robot movement")
@@ -364,7 +360,7 @@ def init_trajectory():
 
     #fit_trajectory_to_straigth_line 
     alpha = np.linalg.solve(kernel_matrix, straight_line @ np.linalg.inv(jac))
-    lambda_reg = 0.02
+    lambda_reg = 0.01
     fx = evaluate(alpha, kernel_matrix, jac)
     loss = jnp.sum(jnp.square(straight_line - fx)) + lambda_reg * jnp.sum((jnp.matmul(alpha.T, fx)))
     print('Alpha solve loss = %0.3f' % ( loss))
@@ -379,7 +375,6 @@ def compute_cartesian_cost(f):
     o_expand = jnp.expand_dims(obstacles, 2) @ jnp.ones((1, 1, t_len))
     o_reshape = o_expand.transpose((1,2,0))
 
-    #cost_v = jnp.sum(0.8 / (0.5 + jnp.sqrt(jnp.sum(jnp.square(f_expand - o_reshape), axis=0))), axis=1)
     cost_v = jnp.sum(0.8 / (0.5 + jnp.linalg.norm(f_expand - o_reshape, axis=0)), axis=1)
     max_cost = jnp.max(cost_v)
     avg_cost = jnp.sum(cost_v) / cost_v.shape[0]
@@ -553,8 +548,8 @@ if not useBLS:
         alpha = (1 - lambda_reg * lr(iter)) * alpha - lr(iter) * alpha_grad
 
 else:
-    big_iter = 0
-    last_big_iter_increase = -1
+    outer_loop_iter = 0
+    last_outer_loop_increase = -1
     bls_lr = bls_lr_start
     for iter in range(max_iteration):
 
@@ -562,19 +557,13 @@ else:
 
         if iter % amount_epoch_plot == 0: 
             #print(iter, loss.item())
-
             data[iter] = alpha
             losses[iter] = loss
-            aux[iter] = big_iter
-            u_loss[iter] = compute_trajectory_obstacle_cost(data[iter])
+            aux[iter] = outer_loop_iter
+            u_loss[iter] = compute_trajectory_obstacle_cost(evaluate(alpha, km, jac))
 
-        
         alpha_grad = g(alpha, km, dkm, jac)
         n_alpha_grad = alpha_grad / jnp.linalg.norm(alpha_grad) # normalized
-
-        
-        min_loss = loss
-        min_bls_lr = 0
 
         print("---")
         cf = constraintsFulfilled(alpha, km, dkm, jac, True)
@@ -586,37 +575,35 @@ else:
             required_loss = loss - bls_alpha * bls_lr * jnp.sum(alpha_grad * n_alpha_grad)
             cf = constraintsFulfilled(alpha, km, dkm, jac)
             print(" bls_iter", j, "bls_lr", bls_lr, "loss", new_loss, "req loss", required_loss, "constraint", cf)
-            if new_loss < min_loss:
-                min_loss = new_loss
-                min_bls_lr = bls_lr
-
+            
             if new_loss > required_loss:
                 bls_lr *= bls_beta_minus
-
             else:
-                print("chose", min_bls_lr, "with", min_loss)
-                alpha = (1 - lambda_reg * min_bls_lr) * alpha - min_bls_lr * n_alpha_grad
-                bls_lr = min_bls_lr * bls_beta_plus
+                print("chose", bls_lr, "with", new_loss)
+                alpha = (1 - lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
+                bls_lr = bls_lr * bls_beta_plus
                 break
 
-        # end of current minimzation
-        if abs(loss - new_loss) < loop_loss_reduction or iter > last_big_iter_increase + 15:
+        if constraintsFulfilled(alpha, km, dkm, jac, verbose=True):
+            if outer_loop_iter > 0 or abs(loss - new_loss) < loop_loss_reduction:
+                print("constraints fulfilled and inner loop minimized or one inner loop finished")
+                break
+
+        # end of current inner minimzation
+        if abs(loss - new_loss) < loop_loss_reduction:
             print("abort too small loss change")
-            if constraintsFulfilled(alpha, km, dkm, jac, verbose=True):
+            if iter > last_outer_loop_increase + 1: 
+                outer_loop_iter += 1
+                last_outer_loop_increase = iter
+                print()
+                print("NEW BIG ITER; INCREASE LAMBDA", outer_loop_iter)
+                lambda_constraint *= lambda_constraint_increase
+                lambda_2_constraint *= lambda_constraint_increase
+                bls_lr = bls_lr_start
+                continue
+            else: 
+                print("no gradient step possible in big_iter, abort")
                 break
-            else:
-                if iter > last_big_iter_increase + 1: 
-                    big_iter += 1
-                    last_big_iter_increase = iter
-                    print()
-                    print("NEW BIG ITER; INCREASE LAMBDA", big_iter)
-                    lambda_constraint *= big_iter_constraint_change
-                    lambda_2_constraint *= big_iter_constraint_change
-                    bls_lr = bls_lr_start
-                    continue
-                else: 
-                    print("no gradient step possible in big_iter, abort")
-                    break
 
 
 et = time.time()
