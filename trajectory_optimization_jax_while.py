@@ -10,6 +10,8 @@ from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation
 
+from functools import partial
+
 import os
 os.environ['TF_XLA_FLAGS'] = (
     '--xla_gpu_enable_triton_softmax_fusion=true '
@@ -32,26 +34,26 @@ useBLS = True
 
 max_iteration = 100
 
-lr_start = 0.0001
-lr_end =   0.0000001
+lr_start = 0.0002
+lr_end =   0.000001
 
 #bls
-bls_lr_start = 0.2
-bls_alpha = 0.01
+bls_lr_start = 0.1
+bls_alpha = 0.1
 bls_beta_minus = 0.5
-bls_beta_plus = 1.2
-bls_max_iter = 20
+bls_beta_plus = 1.5
+bls_max_iter = 100
 
-lambda_constraint_increase = 10
+big_iter_constraint_change = 1.5
 
 loop_loss_reduction = 0.001
 
-lambda_reg = 0.0001
+lambda_reg = 0.1
 lambda_constraint = 0.5
 lambda_2_constraint = 0.1
 lambda_max_cost = 0.8
 
-trajectory_duration = 2
+trajectory_max_duration = 3
 max_joint_velocity = 3
 min_joint_position = -1
 max_joint_position = 2
@@ -62,8 +64,10 @@ link_length = jnp.array([1.5, 1.0, 0.5])
 
 start_config = jnp.array([0.0, 0.0, 0.0])
 goal_config = jnp.array([1.2, 1.0, 0.3])
-eps_start_goal_velocity = 0.05
-eps_start_goal_distance = 0.01
+max_start_goal_velocity = 0.5
+final_max_start_goal_velocity = 0.05
+max_start_goal_distance = 0.1
+final_max_start_goal_distance = 0.01
 
 obs_1 = jnp.array([     
                     [ 2, -3],
@@ -81,20 +85,22 @@ obs_1 = jnp.array([
 
 
 obs_2 = jnp.array([     
-                    [3, 3],
                     [3, 2],
+                    [3, 3],
                     [3, 1],
-                    [2, 3],
-                    [2.2, 2.2],
                     [2, 1],
-                    [1, 3],
-                    [1, 2],
                     [1, 1],
+                    [-1, -1],
+                    [-1, 0],
+                    [-1, 1],
+                    [2, 2]
                     ])
 
 obstacles = obs_1
 
+c = 2.0 / (2 + jnp.exp(4 - 8*jnp.linspace(0, 1, N_timesteps)))
 c = 3*jnp.linspace(0, 1, N_timesteps)**2 - 2* jnp.linspace(0, 1, N_timesteps) ** 3
+
 straight_line = jnp.stack((
     start_config[0] + (goal_config[0] - start_config[0]) * c,
     start_config[1] + (goal_config[1] - start_config[1]) * c,
@@ -136,7 +142,7 @@ def plot_loss_contour(fig, axs):
 
 
 # Creates the animation.
-def create_animation(km, dkm, jac, data, losses, aux, u_loss):
+def create_animation(data, losses, aux, u_loss):
     
     fig, ((ax0, ax2, ax4), (ax1, ax5, ax3)) = plt.subplots(nrows=2, ncols=3)
     last_id = max(data.keys())
@@ -156,20 +162,17 @@ def create_animation(km, dkm, jac, data, losses, aux, u_loss):
     cartesian_data = fk(straight_line)
     ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:gray', label="initial straight line trajectory")
 
-    init_trajectory = evaluate(data[0], km, jac)
-    final_trajectory = evaluate(data[last_id], km, jac)
-
-    cartesian_data = fk(final_trajectory)
+    cartesian_data = fk(data[last_id])
     ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:gray', label="final ee trajectory")
 
     ax0.plot([0], [0], 'o', color="black", label="joint 0")
     ax2.plot([0], [0], 'o', color="black", label="joint 0")
    
-    cartesian_data = fk_joint(init_trajectory, 1)
+    cartesian_data = fk_joint(data[0], 1)
     curr_fx1, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='blue', label="joint 1")
-    cartesian_data = fk_joint(init_trajectory, 2)
+    cartesian_data = fk_joint(data[0], 2)
     curr_fx2, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='orange', label="joint 2")
-    cartesian_data = fk(init_trajectory)
+    cartesian_data = fk(data[0])
     curr_fx, = ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='darkgreen', label="ee")
 
     #big iter
@@ -187,19 +190,19 @@ def create_animation(km, dkm, jac, data, losses, aux, u_loss):
     # trajectory point cost over iteration
     trajectory_point_cost = np.zeros(N_timesteps)
     for i in range(N_timesteps):
-        trajectory_point_cost[i] = compute_trajectory_obstacle_cost(final_trajectory[i]).item()
+        trajectory_point_cost[i] = compute_trajectory_obstacle_cost(data[last_id][i]).item()
     ax3.plot(t, trajectory_point_cost, '-', color='grey')
     for i in range(N_timesteps):
-        trajectory_point_cost[i] = compute_trajectory_obstacle_cost(init_trajectory[i]).item()
+        trajectory_point_cost[i] = compute_trajectory_obstacle_cost(data[0][i]).item()
     ax3.plot(t, trajectory_point_cost, '-', color='grey')
     s5, = ax3.plot(t, trajectory_point_cost, '-', color='black')
 
 
     # final robot movement
     fin_movement = np.zeros((4, 2, N_timesteps))
-    fin_movement[1] = fk_joint(final_trajectory, 1)
-    fin_movement[2] = fk_joint(final_trajectory, 2)
-    fin_movement[3] = fk_joint(final_trajectory, 3)
+    fin_movement[1] = fk_joint(data[last_id], 1)
+    fin_movement[2] = fk_joint(data[last_id], 2)
+    fin_movement[3] = fk_joint(data[last_id], 3)
     s4,  = ax2.plot(fin_movement[:,0,0], fin_movement[:,1,0], '-', color = 'black', label="robot")
 
 
@@ -208,34 +211,34 @@ def create_animation(km, dkm, jac, data, losses, aux, u_loss):
     ax1.plot(t, straight_line[:, 1], '-', color='grey')
     ax1.plot(t, straight_line[:, 2], '-', color='grey')
 
-    ax1.plot(t, final_trajectory[:, 0], '-', color='grey')
-    ax1.plot(t, final_trajectory[:, 1], '-', color='grey')
-    ax1.plot(t, final_trajectory[:, 2], '-', color='grey')
+    ax1.plot(t, data[last_id][:, 0], '-', color='grey')
+    ax1.plot(t, data[last_id][:, 1], '-', color='grey')
+    ax1.plot(t, data[last_id][:, 2], '-', color='grey')
 
-    s1, = ax1.plot(t, init_trajectory[:, 0], '-', color='blue', label="joint 0")
-    s2, = ax1.plot(t, init_trajectory[:, 1], '-', color='orange', label="joint 1")
-    s3, = ax1.plot(t, init_trajectory[:, 2], '-', color='green', label="joint 2")
+    s1, = ax1.plot(t, data[0][:, 0], '-', color='blue', label="joint 0")
+    s2, = ax1.plot(t, data[0][:, 1], '-', color='orange', label="joint 1")
+    s3, = ax1.plot(t, data[0][:, 2], '-', color='green', label="joint 2")
 
 
     # joint velocities over iterations
-    init_joint_velocity = evaluate(data[0], dkm, jac)
-    ax5.plot(t, init_joint_velocity[:, 0], '-', color='grey')
-    ax5.plot(t, init_joint_velocity[:, 1], '-', color='grey')
-    ax5.plot(t, init_joint_velocity[:, 2], '-', color='grey')
+    joint_velocity = (data[0][1 : ] - data[0][ : len(data[0])-1]) * N_timesteps / trajectory_max_duration
+    ax5.plot(t[:N_timesteps-1], joint_velocity[:, 0], '-', color='grey')
+    ax5.plot(t[:N_timesteps-1], joint_velocity[:, 1], '-', color='grey')
+    ax5.plot(t[:N_timesteps-1], joint_velocity[:, 2], '-', color='grey')
 
-    final_joint_velocity = evaluate(data[last_id], dkm, jac)
-    ax5.plot(t, final_joint_velocity[:, 0], '-', color='grey')
-    ax5.plot(t, final_joint_velocity[:, 1], '-', color='grey')
-    ax5.plot(t, final_joint_velocity[:, 2], '-', color='grey')
+    joint_velocity = (data[last_id][1 : ] - data[last_id][ : len(data[last_id])-1]) * N_timesteps / trajectory_max_duration
+    ax5.plot(t[:N_timesteps-1], joint_velocity[:, 0], '-', color='grey')
+    ax5.plot(t[:N_timesteps-1], joint_velocity[:, 1], '-', color='grey')
+    ax5.plot(t[:N_timesteps-1], joint_velocity[:, 2], '-', color='grey')
 
-    s6, = ax5.plot(t, final_joint_velocity[:, 0], '-', color='blue', label="joint 0")
-    s7, = ax5.plot(t, final_joint_velocity[:, 1], '-', color='orange', label="joint 1")
-    s8, = ax5.plot(t, final_joint_velocity[:, 2], '-', color='green', label="joint 2")
+    s6, = ax5.plot(t[:N_timesteps-1], joint_velocity[:, 0], '-', color='blue', label="joint 0")
+    s7, = ax5.plot(t[:N_timesteps-1], joint_velocity[:, 1], '-', color='orange', label="joint 1")
+    s8, = ax5.plot(t[:N_timesteps-1], joint_velocity[:, 2], '-', color='green', label="joint 2")
 
 
     # Title.
     title_text = 'Trajectory Optimization \n Iteration %d, Loss %.2f'
-    title = ax3.text(0.5, 0.5, title_text, horizontalalignment='center', verticalalignment='center', transform=fig.transFigure, fontsize=14)
+    title = ax0.text(0.8, 0.9, title_text, horizontalalignment='center', verticalalignment='center', transform=fig.transFigure, fontsize=14)
 
     ax0.legend(loc='lower left')
     ax2.legend(loc='lower left', title="final robot movement")
@@ -254,29 +257,29 @@ def create_animation(km, dkm, jac, data, losses, aux, u_loss):
         if iteration % 1 == 0:
             title.set_text(title_text % (iteration, losses[iteration]))
 
-            trajectory = evaluate(data[iteration], km, jac)
-            cartesian_data = fk(trajectory)
+            cartesian_data = fk(data[iteration])
             curr_fx.set_xdata(cartesian_data[0])
             curr_fx.set_ydata(cartesian_data[1])
 
-            cartesian_data = fk_joint(trajectory,1)
+            cartesian_data = fk_joint(data[iteration],1)
             curr_fx1.set_xdata(cartesian_data[0])
             curr_fx1.set_ydata(cartesian_data[1])
 
-            cartesian_data = fk_joint(trajectory,2)
+            cartesian_data = fk_joint(data[iteration],2)
             curr_fx2.set_xdata(cartesian_data[0])
             curr_fx2.set_ydata(cartesian_data[1])
 
             trajectory_point_cost = np.zeros(N_timesteps)
             for i in range(N_timesteps):
-                trajectory_point_cost[i] = compute_trajectory_obstacle_cost(trajectory[i]).item()
+                trajectory_point_cost[i] = compute_trajectory_obstacle_cost(data[iteration][i]).item() / 2
             s5.set_ydata(trajectory_point_cost)
 
-            s1.set_ydata(trajectory[:, 0])
-            s2.set_ydata(trajectory[:, 1])
-            s3.set_ydata(trajectory[:, 2])
 
-            joint_velocity = evaluate(data[iteration], dkm, jac)
+            s1.set_ydata(data[iteration][:, 0])
+            s2.set_ydata(data[iteration][:, 1])
+            s3.set_ydata(data[iteration][:, 2])
+
+            joint_velocity = (data[iteration][1 : ] - data[iteration][ : len(data[iteration])-1]) * N_timesteps / trajectory_max_duration
             s6.set_ydata(joint_velocity[:, 0])
             s7.set_ydata(joint_velocity[:, 1])
             s8.set_ydata(joint_velocity[:, 2])
@@ -317,7 +320,7 @@ def rbf_kernel(x_1, x_2):
 
 
 def d_rbf_kernel(x_1, x_2):
-    return (x_1 - x_2) / (trajectory_duration * rbf_var**2) * jnp.exp( - (x_1 - x_2)**2 / (2 * rbf_var**2) ) 
+    return jnp.exp( - (x_1 - x_2)**2 / (2 * rbf_var**2) ) / jnp.abs(x_1 - x_2)
 
 
 # Create kernel matrix from dataset.
@@ -360,7 +363,7 @@ def init_trajectory():
 
     #fit_trajectory_to_straigth_line 
     alpha = np.linalg.solve(kernel_matrix, straight_line @ np.linalg.inv(jac))
-    lambda_reg = 0.01
+    lambda_reg = 0.02
     fx = evaluate(alpha, kernel_matrix, jac)
     loss = jnp.sum(jnp.square(straight_line - fx)) + lambda_reg * jnp.sum((jnp.matmul(alpha.T, fx)))
     print('Alpha solve loss = %0.3f' % ( loss))
@@ -375,6 +378,7 @@ def compute_cartesian_cost(f):
     o_expand = jnp.expand_dims(obstacles, 2) @ jnp.ones((1, 1, t_len))
     o_reshape = o_expand.transpose((1,2,0))
 
+    #cost_v = jnp.sum(0.8 / (0.5 + jnp.sqrt(jnp.sum(jnp.square(f_expand - o_reshape), axis=0))), axis=1)
     cost_v = jnp.sum(0.8 / (0.5 + jnp.linalg.norm(f_expand - o_reshape, axis=0)), axis=1)
     max_cost = jnp.max(cost_v)
     avg_cost = jnp.sum(cost_v) / cost_v.shape[0]
@@ -399,19 +403,21 @@ def compute_trajectory_obstacle_cost(trajectory):
     return (compute_cartesian_cost(f) + compute_cartesian_cost(f1) + compute_cartesian_cost(f2)) / 3
 
 
-def start_goal_position_constraint_fulfilled(trajectory):
+def start_goal_position_constraint_fulfilled(trajectory, finalConstraint=False):
+    d = final_max_start_goal_distance if finalConstraint else max_start_goal_distance
     s = trajectory[0]
-    if jnp.sum(jnp.square(s-start_config)) > jnp.square(eps_start_goal_distance):
+    if jnp.sum(jnp.square(s-start_config)) > jnp.square(d):
         return False
     g = trajectory[N_timesteps-1]
-    if jnp.sum(jnp.square(g-goal_config)) > jnp.square(eps_start_goal_distance):
+    if jnp.sum(jnp.square(g-goal_config)) > jnp.square(d):
         return False
     return True
 
-def start_goal_velocity_constraint_fulfilled(joint_velocity):
-    if jnp.sum(jnp.square(joint_velocity[0])) > jnp.square(eps_start_goal_velocity):
+def start_goal_velocity_constraint_fulfilled(joint_velocity, finalConstraint=False):
+    d = final_max_start_goal_velocity if finalConstraint else max_start_goal_velocity
+    if jnp.sum(jnp.square(joint_velocity[0])) > jnp.square(d):
         return False
-    if jnp.sum(jnp.square(joint_velocity[-1])) > jnp.square(eps_start_goal_velocity):
+    if jnp.sum(jnp.square(joint_velocity[-1])) > jnp.square(d):
         return False
     return True
 
@@ -427,12 +433,11 @@ def joint_velocity_constraint(joint_velocity):
         return False
     return True
 
-def constraintsFulfilled(alpha, km, dkm, jac, verbose=False):
-    trajectory = evaluate(alpha, km, jac)
-    joint_velocity = evaluate(alpha, dkm, jac)
-    
+def constraintsFulfilled(trajectory, finalConstraint=False, verbose=False):
+    joint_velocity = (trajectory[1 : ] - trajectory[ : len(trajectory)-1]) * N_timesteps / trajectory_max_duration
+
     # start and goal position
-    if not start_goal_position_constraint_fulfilled(trajectory):
+    if not start_goal_position_constraint_fulfilled(trajectory, finalConstraint):
         if verbose:
             print("violated start goal position", jnp.linalg.norm(trajectory[0]-start_config), jnp.linalg.norm(trajectory[-1]-goal_config))
         return False
@@ -441,7 +446,7 @@ def constraintsFulfilled(alpha, km, dkm, jac, verbose=False):
 
     
     # start and goal velocity
-    if not start_goal_velocity_constraint_fulfilled(joint_velocity):
+    if not start_goal_velocity_constraint_fulfilled(joint_velocity, finalConstraint):
         if verbose:
             print("violated start goal velocity", jnp.linalg.norm(joint_velocity[0]), jnp.linalg.norm(joint_velocity[-1]))
         return False
@@ -471,7 +476,7 @@ def start_goal_cost(trajectory):
     return loss
 
 def start_goal_velocity_cost(joint_velocity):
-    loss = jnp.sum(jnp.square(joint_velocity[0])) + jnp.sum(jnp.square(joint_velocity[-1]))
+    loss = jnp.sum(jnp.square(joint_velocity[0] / max_start_goal_velocity)) + jnp.sum(jnp.square(joint_velocity[-1] / max_start_goal_velocity))
     return loss
 
 def joint_limit_cost(trajectory):
@@ -482,15 +487,16 @@ def joint_velocity_limit_cost(joint_velocity):
     loss = jnp.sum(jnp.square(joint_velocity / max_joint_velocity)) / N_timesteps
     return loss
 
-def compute_trajectory_cost(alpha, km, dkm, jac):
+def compute_trajectory_cost(alpha, km, jac):
+
     trajectory = evaluate(alpha, km, jac)
-    joint_velocity = evaluate(alpha, dkm, jac)
+    joint_velocity = (trajectory[1 : ] - trajectory[ : len(trajectory)-1]) * N_timesteps / trajectory_max_duration
 
     toc = compute_trajectory_obstacle_cost(trajectory) 
     sgpc = start_goal_cost(trajectory)
     sgvc = start_goal_velocity_cost(joint_velocity)
-    jpc = joint_limit_cost(trajectory) if not joint_position_constraint(trajectory) else 0
-    jvc = joint_velocity_limit_cost(joint_velocity) if not joint_velocity_constraint(joint_velocity) else 0
+    jpc = 0 #joint_limit_cost(trajectory) if not joint_position_constraint(trajectory) else 0
+    jvc = 0 #joint_velocity_limit_cost(joint_velocity) if not joint_velocity_constraint(joint_velocity) else 0
     return toc + lambda_constraint * (sgpc + sgvc) + lambda_2_constraint * (jpc + jvc)
 
 
@@ -505,7 +511,7 @@ aux = {}
 
 trajectory = evaluate(alpha, km, jac)
 
-data[0] = alpha
+data[0] = trajectory
 losses[0] = 0
 aux[0] = 0
 u_loss[0] = 0
@@ -533,7 +539,7 @@ if not useBLS:
         if iter % amount_epoch_plot == 0: 
             print(iter, loss.item())
 
-            data[iter] = alpha
+            data[iter] = evaluate(alpha, km, jac)
             losses[iter] = loss
             aux[iter] = 0
             u_loss[iter] = compute_trajectory_obstacle_cost(data[iter])
@@ -548,57 +554,87 @@ if not useBLS:
         alpha = (1 - lambda_reg * lr(iter)) * alpha - lr(iter) * alpha_grad
 
 else:
-    outer_loop_iter = 0
-    last_outer_loop_increase = -1
-    bls_lr = bls_lr_start
-    for iter in range(max_iteration):
 
-        loss = l(alpha, km, dkm, jac)
+    last_big_iter_increase = -1
 
-        if iter % amount_epoch_plot == 0: 
-            #print(iter, loss.item())
-            data[iter] = alpha
-            losses[iter] = loss
-            aux[iter] = outer_loop_iter
-            u_loss[iter] = compute_trajectory_obstacle_cost(evaluate(alpha, km, jac))
+    init_val = (0, 1000, alpha, bls_lr_start)
 
-        alpha_grad = g(alpha, km, dkm, jac)
+    def cond_fun(a):
+        iter, last_loss, alpha, bls_lr = a
+        return iter < max_iteration #and compute_trajectory_cost(alpha, km, jac) < last_loss - loop_loss_reduction
+    
+    def body_fun(a):
+        iter, last_loss, alpha, bls_lr = a
+
+        loss = compute_trajectory_cost(alpha, km, jac)
+
+        #if iter % amount_epoch_plot == 0: 
+        #    #print(iter, loss.item())
+        #
+        #    data[iter] = evaluate(alpha, km, jac)
+        #    losses[iter] = loss
+        #    aux[iter] = iter
+        #    u_loss[iter] = compute_trajectory_obstacle_cost(data[iter])
+        
+        alpha_grad = jax.grad(compute_trajectory_cost)(alpha, km, jac)
         n_alpha_grad = alpha_grad / jnp.linalg.norm(alpha_grad) # normalized
 
+        print("---")
+        min_loss = loss
+        min_bls_lr = 0
+        cf = constraintsFulfilled(evaluate(alpha, km, jac), False, True)
+        ul = compute_trajectory_obstacle_cost(evaluate(alpha, km, jac))
+        print("iter", iter, "loss", loss, "uloss", ul, "cf", cf)
         for j in range(bls_max_iter):
             new_alpha = (1 - lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
-            new_loss = l(new_alpha, km, dkm, jac)
+            new_loss = l(new_alpha, km, jac)
             required_loss = loss - bls_alpha * bls_lr * jnp.sum(alpha_grad * n_alpha_grad)
-            #print(" bls_iter", j, "bls_lr", bls_lr, "loss", new_loss, "req loss", required_loss)
-            
+            cf = constraintsFulfilled(evaluate(new_alpha, km, jac))
+            print(" bls_iter", j, "bls_lr", bls_lr, "loss", new_loss, "req loss", required_loss, "constraint", cf)
+            if new_loss < min_loss:
+                min_loss = new_loss
+                min_bls_lr = bls_lr
+
             if new_loss > required_loss:
                 bls_lr *= bls_beta_minus
             else:
-                #print("chose", bls_lr, "with", new_loss)
-                alpha = (1 - lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
-                bls_lr = bls_lr * bls_beta_plus
+                # min_bls_lr = bls_lr
+                print("chose", min_bls_lr, "with", min_loss)
+                alpha = (1 - lambda_reg * min_bls_lr) * alpha - min_bls_lr * n_alpha_grad
+                bls_lr = min_bls_lr * bls_beta_plus
                 break
 
-        if constraintsFulfilled(alpha, km, dkm, jac):
-            if outer_loop_iter > 0 or abs(loss - new_loss) < loop_loss_reduction:
-                print("constraints fulfilled and inner loop minimized or one inner loop finished")
-                break
+        #return (iter+1, loss, alpha, bls_lr)
 
-        # end of current inner minimzation
-        if abs(loss - new_loss) < loop_loss_reduction:
-            print("end of inner loop minimzation too small loss change")
-            if iter > last_outer_loop_increase + 1: 
-                outer_loop_iter += 1
-                last_outer_loop_increase = iter
+        # constraint dual optimization:  end of current minimzation
+        if abs(loss - new_loss) < loop_loss_reduction: # or iter > last_big_iter_increase + 15:
+            print("abort too small loss change")
+            if True: #iter > last_big_iter_increase + 1: 
+                big_iter += 1
+                last_big_iter_increase = iter
                 print()
-                print("new outer loop", outer_loop_iter, "increase lambda")
-                lambda_constraint *= lambda_constraint_increase
-                lambda_2_constraint *= lambda_constraint_increase
+                print("NEW BIG ITER; INCREASE LAMBDA", big_iter)
+                lambda_constraint *= big_iter_constraint_change**2
+                lambda_2_constraint *= big_iter_constraint_change
+                max_start_goal_distance = max(max_start_goal_distance/big_iter_constraint_change, final_max_start_goal_distance)
+                max_start_goal_velocity = max(max_start_goal_velocity/big_iter_constraint_change, final_max_start_goal_velocity)
+                print("new max distances,", max_start_goal_distance, max_start_goal_velocity)
                 bls_lr = bls_lr_start
-                continue
-            else: 
-                print("no gradient step possible in outer loop, end")
-                break
+
+
+        return (iter+1, loss, alpha, (bls_lr_start, bls_alpha, bls_beta_minus, bls_beta_plus, bls_max_iter))
+    
+    
+
+    val = init_val
+    while cond_fun(val):
+        val = body_fun(val)
+
+
+    #a = jax.lax.while_loop(cond_fun, body_fun, init_val)
+    #iter, last_loss, alpha, bls_lr = a
+
+
 
 
 et = time.time()
@@ -607,7 +643,7 @@ print("took", 1000*(et-st), "ms")
 
 np_trajectory = np.array(evaluate(alpha, km, jac))
 np.savetxt("trajectory_result.txt", np_trajectory)
-create_animation(km, dkm, jac, data, losses, aux, u_loss)
+create_animation(data, losses, aux, u_loss)
 
 
 

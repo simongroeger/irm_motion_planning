@@ -282,7 +282,7 @@ def create_animation(km, dkm, jac, data, losses, aux, u_loss):
             s8.set_ydata(joint_velocity[:, 2])
         
             
-            ri = int(iteration * N_timesteps / max(data.keys()))
+            ri = int(iteration * N_timesteps / (1 + max(data.keys())))
             s4.set_xdata(fin_movement[:,0,ri])
             s4.set_ydata(fin_movement[:,1,ri])
 
@@ -430,6 +430,14 @@ def joint_velocity_constraint(joint_velocity):
 def constraintsFulfilled(alpha, km, dkm, jac, verbose=False):
     trajectory = evaluate(alpha, km, jac)
     joint_velocity = evaluate(alpha, dkm, jac)
+
+    s = trajectory[0]
+    g = trajectory[-1]
+    vs = joint_velocity[0]
+    vg = joint_velocity[-1]
+
+    return jnp.sum(jnp.square(s-start_config)) < jnp.square(eps_start_goal_distance) and jnp.sum(jnp.square(g-goal_config)) < jnp.square(eps_start_goal_distance) and jnp.sum(jnp.square(vs)) > jnp.square(eps_start_goal_velocity) and jnp.sum(jnp.square(vg)) > jnp.square(eps_start_goal_velocity)
+
     
     # start and goal position
     if not start_goal_position_constraint_fulfilled(trajectory):
@@ -489,6 +497,8 @@ def compute_trajectory_cost(alpha, km, dkm, jac):
     toc = compute_trajectory_obstacle_cost(trajectory) 
     sgpc = start_goal_cost(trajectory)
     sgvc = start_goal_velocity_cost(joint_velocity)
+    return toc + lambda_constraint * (sgpc + sgvc)
+
     jpc = joint_limit_cost(trajectory) if not joint_position_constraint(trajectory) else 0
     jvc = joint_velocity_limit_cost(joint_velocity) if not joint_velocity_constraint(joint_velocity) else 0
     return toc + lambda_constraint * (sgpc + sgvc) + lambda_2_constraint * (jpc + jvc)
@@ -514,10 +524,6 @@ last_loss = 1000
 
 l = jax.jit(compute_trajectory_cost)
 g = jax.jit(jax.grad(l))
-
-#TODO
-l = compute_trajectory_cost
-g = jax.grad(l)
 
 
 st = time.time()
@@ -550,55 +556,112 @@ if not useBLS:
 else:
     outer_loop_iter = 0
     last_outer_loop_increase = -1
-    bls_lr = bls_lr_start
-    for iter in range(max_iteration):
+
+    init_val = (0, 1000, alpha, bls_lr_start)
+
+    
+    def t_func(a):
+        iter, loss, new_loss, alpha, bls_lr = a
+        #print("constraints fulfilled and inner loop minimized or one inner loop finished")
+        return (max_iteration, loss, new_loss, alpha, bls_lr)
+        
+    def ftt_func(a):
+        global last_outer_loop_increase, outer_loop_iter, lambda_constraint, lambda_2_constraint
+        iter, loss, new_loss, alpha, bls_lr = a
+        outer_loop_iter += 1
+        last_outer_loop_increase = iter
+        print()
+        #print("new outer loop", outer_loop_iter, "increase lambda")
+        lambda_constraint *= lambda_constraint_increase
+        lambda_2_constraint *= lambda_constraint_increase
+        return (iter, loss, new_loss, alpha, bls_lr_start)
+
+    def ftf_func(a):
+        iter, loss, new_loss, alpha, bls_lr = a
+        #print(iter, "no gradient step possible in outer loop, end")
+        return (max_iteration, loss, new_loss, alpha, bls_lr)
+    
+    def ft_func(a):
+        iter, loss, new_loss, alpha, bls_lr = a
+        pred = iter > last_outer_loop_increase + 1
+        a = jax.lax.cond(pred, ftt_func, ftf_func, a)
+        return a
+
+    def ff_func(a):
+        #print("nothing")
+        return a
+
+
+    def f_func(a):
+        iter, loss, new_loss, alpha, bls_lr = a
+        pred = abs(loss - new_loss) < loop_loss_reduction
+        a = jax.lax.cond(pred, ft_func, ff_func, a)
+        return a
+
+    
+    def bls_more(a):
+        n_alpha_grad, alpha, bls_lr, j = a
+        bls_lr *= bls_beta_minus
+        return (n_alpha_grad, alpha, bls_lr, j+1)
+    
+    def bls_break(a):
+        n_alpha_grad, alpha, bls_lr, j = a
+        alpha = (1 - lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
+        bls_lr = bls_lr * bls_beta_plus
+        return (n_alpha_grad, alpha, bls_lr, bls_max_iter)
+
+    
+    def body_fun(a):
+        global data, losses, aux, u_loss
+        iter, last_loss, alpha, bls_lr = a
 
         loss = l(alpha, km, dkm, jac)
 
-        if iter % amount_epoch_plot == 0: 
-            #print(iter, loss.item())
-            data[iter] = alpha
-            losses[iter] = loss
-            aux[iter] = outer_loop_iter
-            u_loss[iter] = compute_trajectory_obstacle_cost(evaluate(alpha, km, jac))
+        if iter != 0:
+            iter = iter.item()
+        print(iter, outer_loop_iter, loss, lambda_constraint)
+        data[iter] = alpha
+        losses[iter] = loss
+        aux[iter] = 0
+        u_loss[iter] = compute_trajectory_obstacle_cost(evaluate(alpha, km, jac))
+
 
         alpha_grad = g(alpha, km, dkm, jac)
         n_alpha_grad = alpha_grad / jnp.linalg.norm(alpha_grad) # normalized
 
-        for j in range(bls_max_iter):
+        j = 0
+        while j < bls_max_iter:
             new_alpha = (1 - lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
             new_loss = l(new_alpha, km, dkm, jac)
             required_loss = loss - bls_alpha * bls_lr * jnp.sum(alpha_grad * n_alpha_grad)
-            #print(" bls_iter", j, "bls_lr", bls_lr, "loss", new_loss, "req loss", required_loss)
+            print(" bls_iter", j, "bls_lr", bls_lr, "loss", new_loss, "req loss", required_loss)
+
+            a = jax.lax.cond(new_loss > required_loss, bls_more, bls_break, (n_alpha_grad, alpha, bls_lr, j))
+            n_alpha_grad, alpha, bls_lr, j = a
             
-            if new_loss > required_loss:
-                bls_lr *= bls_beta_minus
-            else:
-                #print("chose", bls_lr, "with", new_loss)
-                alpha = (1 - lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
-                bls_lr = bls_lr * bls_beta_plus
-                break
+        pred = constraintsFulfilled(alpha, km, dkm, jac) and (outer_loop_iter > 0 or abs(loss - new_loss) < loop_loss_reduction)
+            
+        a = (iter, loss, new_loss, alpha, bls_lr)
+        a = jax.lax.cond(pred, t_func, f_func, a)
+        iter, loss, new_loss, alpha, bls_lr = a
+        return (iter+1, last_loss, alpha, bls_lr)
 
-        if constraintsFulfilled(alpha, km, dkm, jac):
-            if outer_loop_iter > 0 or abs(loss - new_loss) < loop_loss_reduction:
-                print("constraints fulfilled and inner loop minimized or one inner loop finished")
-                break
 
-        # end of current inner minimzation
-        if abs(loss - new_loss) < loop_loss_reduction:
-            print("end of inner loop minimzation too small loss change")
-            if iter > last_outer_loop_increase + 1: 
-                outer_loop_iter += 1
-                last_outer_loop_increase = iter
-                print()
-                print("new outer loop", outer_loop_iter, "increase lambda")
-                lambda_constraint *= lambda_constraint_increase
-                lambda_2_constraint *= lambda_constraint_increase
-                bls_lr = bls_lr_start
-                continue
-            else: 
-                print("no gradient step possible in outer loop, end")
-                break
+    def cond_fun(a):
+        iter, last_loss, alpha, bls_lr = a
+        return iter < max_iteration #and compute_trajectory_cost(alpha, km, jac) < last_loss - loop_loss_reduction
+    
+    
+    
+    val = init_val
+    while cond_fun(val):
+        val = body_fun(val)
+    iter, last_loss, alpha, bls_lr = val
+
+
+    #a = jax.lax.while_loop(cond_fun, body_fun, init_val)
+    #iter, last_loss, alpha, bls_lr = a
+
 
 
 et = time.time()
