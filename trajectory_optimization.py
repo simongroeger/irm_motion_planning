@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from math import atan2, sin, cos, sqrt
 import torch
+import time
 from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
 from matplotlib.animation import FuncAnimation
@@ -381,21 +382,24 @@ losses[0] = 0
 print(jac)
 
 
+st = time.time()
+
 for iter in range(max_iteration):
     trajectory = evaluate(alpha, km, jac)
     loss = compute_trajectory_cost(alpha, km, jac)
     loss.backward()
     with torch.no_grad():
-        if iter % 10 == 0: print(iter, loss.item())
+        #if iter % 10 == 0: print(iter, loss.item())
         alpha.data = (1 - lambda_reg * lr(iter)) * alpha.data - lr(iter) * alpha.grad.data
-        #jac.data = (1 - lambda_reg * lr(iter)) * jac.data - lr(iter) * jac.grad.data
-        #alpha.data = alpha.data - lr(iter) * alpha.grad.data
         alpha.grad.zero_()
 
         data[iter+1] = evaluate(alpha, km, jac)
         losses[iter+1] = loss.detach().item()
 
-print(jac)
+et = time.time()
+print("took", 1000*(et-st), "ms")
+      
+#print(jac)
 
 create_animation(data, losses)
 

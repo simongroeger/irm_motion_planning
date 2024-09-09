@@ -26,10 +26,9 @@ np.set_printoptions(precision=4)
 class GradientDescentOptimizer:
     def __init__(self):
         
-        self.max_iteration = 100
+        self.max_iteration = 200
 
-        self.lr_start = 0.005
-        self.lr_end =   0.0002
+        self.lr = 0.002
 
         self.earlyStopping = False
 
@@ -38,18 +37,11 @@ class GradientDescentOptimizer:
         self.loop_loss_reduction = 0.001
 
         self.lambda_reg = 0.0001
-        self.lambda_constraint_start = 0.5
-        self.lambda_constraint_end = 2
+        self.lambda_constraint = 1
         self.lambda_2_constraint = 0.1
-        self.lambda_max_cost = 0.8
+        self.lambda_max_cost = 0.5
 
         self.trajectory = Trajectory()
-
-    def lambda_constraint(self, iter):
-        return self.lambda_constraint_start + (self.lambda_constraint_end - self.lambda_constraint_start) * iter / self.max_iteration
-
-    def lr(self, iter):
-        return self.lr_start + (self.lr_end - self.lr_start) * iter / self.max_iteration
 
 
     def jit_optimize(self, alpha):
@@ -58,9 +50,9 @@ class GradientDescentOptimizer:
         g = jax.jit(jax.grad(l))
         
         for iter in range(self.max_iteration):
-            #loss = l(alpha, self.lambda_constraint(iter), self.lambda_2_constraint, self.lambda_max_cost)
-            alpha_grad = g(alpha, self.lambda_constraint(iter), self.lambda_2_constraint, self.lambda_max_cost)
-            alpha = (1 - self.lambda_reg * self.lr(iter)) * alpha - self.lr(iter) * alpha_grad
+            #loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
         
         return alpha
     
@@ -74,21 +66,21 @@ class GradientDescentOptimizer:
 
             last_loss = 1000
             for iter in range(self.max_iteration):
-                loss = l(alpha, self.lambda_constraint(iter), self.lambda_2_constraint, self.lambda_max_cost)
-                #print(iter, loss, last_loss - loss)
+                loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                print(iter, loss)
                 if last_loss - loss < self.loop_loss_reduction:
                     break
                 else:
                     last_loss = loss
-                alpha_grad = g(alpha, self.lambda_constraint(iter), self.lambda_2_constraint, self.lambda_max_cost)
-                alpha = (1 - self.lambda_reg * self.lr(iter)) * alpha - self.lr(iter) * alpha_grad
+                alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
             
         else:
         
             for iter in range(self.max_iteration):
-                #loss = l(alpha, self.lambda_constraint(iter), self.lambda_2_constraint, self.lambda_max_cost)
-                alpha_grad = g(alpha, self.lambda_constraint(iter), self.lambda_2_constraint, self.lambda_max_cost)
-                alpha = (1 - self.lambda_reg * self.lr(iter)) * alpha - self.lr(iter) * alpha_grad
+                #loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
         
         return alpha
         
