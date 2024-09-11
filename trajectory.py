@@ -79,14 +79,6 @@ class Trajectory:
         return self.compute_point_cost(f, lambda_max_cost)
         
 
-    @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
-    def compute_full_trajectory_obstacle_cost(self, trajectory, lambda_max_cost):
-        f1 = self.env.fk_joint(trajectory, 1)
-        f2 = self.env.fk_joint(trajectory, 2)
-        f3 = self.env.fk_joint(trajectory, 3)
-        return (self.compute_point_cost(f1, lambda_max_cost) + self.compute_point_cost(f2, lambda_max_cost) + self.compute_point_cost(f3, lambda_max_cost)) / 3
-
-
     def constraintsFulfilled(self, alpha, verbose=False):
         trajectory = self.evaluate(alpha, self.km, self.jac)
         joint_velocity = self.evaluate(alpha, self.dkm, self.jac)

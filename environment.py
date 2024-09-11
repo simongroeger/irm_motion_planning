@@ -45,9 +45,35 @@ class Environment:
         pos_y = self.link_length @ jnp.sin(c).T
         pos = jnp.stack((pos_x, pos_y))
         return pos
+   
 
     @partial(jax.jit, static_argnames=['self'])
-    def fk_joint(self, config, joint_id):
+    def fk_joint_1(self, config):
+        joint_id = 1
+        c2 = config.reshape(-1, 3)[:, :joint_id].reshape(-1, joint_id)
+        c = jnp.cumsum(c2,axis=1)
+        ll = self.link_length[:joint_id]
+        pos_x = ll @ jnp.cos(c).T
+        pos_y = ll @ jnp.sin(c).T
+        pos = jnp.stack((pos_x, pos_y))
+        return pos
+
+
+    @partial(jax.jit, static_argnames=['self'])
+    def fk_joint_2(self, config):
+        joint_id = 2
+        c2 = config.reshape(-1, 3)[:, :joint_id].reshape(-1, joint_id)
+        c = jnp.cumsum(c2,axis=1)
+        ll = self.link_length[:joint_id]
+        pos_x = ll @ jnp.cos(c).T
+        pos_y = ll @ jnp.sin(c).T
+        pos = jnp.stack((pos_x, pos_y))
+        return pos
+
+
+    @partial(jax.jit, static_argnames=['self'])
+    def fk_joint_3(self, config):
+        joint_id = 3
         c2 = config.reshape(-1, 3)[:, :joint_id].reshape(-1, joint_id)
         c = jnp.cumsum(c2,axis=1)
         ll = self.link_length[:joint_id]

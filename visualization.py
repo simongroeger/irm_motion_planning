@@ -99,9 +99,9 @@ ax3.plot(t, trajectory_point_cost, '-', color='grey')
 
 # final robot movement
 fin_movement = np.zeros((4, 2, N_timesteps))
-fin_movement[1] = env.fk_joint(trajectory, 1)
-fin_movement[2] = env.fk_joint(trajectory, 2)
-fin_movement[3] = env.fk_joint(trajectory, 3)
+fin_movement[1] = env.fk_joint_1(trajectory)
+fin_movement[2] = env.fk_joint_2(trajectory)
+fin_movement[3] = env.fk_joint_3(trajectory)
 ax2.plot(fin_movement[:,0,0], fin_movement[:,1,0], '-', color = 'black', label="robot")
 
 
