@@ -5,6 +5,7 @@ from math import atan2, sin, cos, sqrt
 
 import jax
 import jax.numpy as jnp
+from functools import partial
 
 from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
@@ -46,6 +47,7 @@ class BacktrackingLineSearchOptimizer:
         self.bls_max_iter = 20
 
         self.trajectory = Trajectory()
+
 
     def optimize(self, alpha):
         trajectory = Trajectory()

@@ -5,6 +5,7 @@ from math import atan2, sin, cos, sqrt
 
 import jax
 import jax.numpy as jnp
+from functools import partial
 
 from matplotlib.colors import BoundaryNorm
 from matplotlib.ticker import MaxNLocator
@@ -36,7 +37,7 @@ class GradientDescentOptimizer:
         self.lr = 0.002
         self.dual_lr = [0.002, 0.00002, 0.00001, 0.00001, 0.00001]
 
-        self.earlyStopping = True
+        self.earlyStopping = False
 
         self.lambda_constraint_increase = 10
 
@@ -55,14 +56,40 @@ class GradientDescentOptimizer:
 
         l = jax.jit(self.trajectory.compute_trajectory_cost)
         g = jax.jit(jax.grad(l))
+
+        @partial(jax.jit, static_argnames=[])
+        def use_newAlpha(a):
+            return a[0], a[0], a[2]
         
-        for iter in range(self.max_iteration):
-            #loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+        @partial(jax.jit, static_argnames=[])
+        def use_oldAlpha(a):
+            return a[1], a[1], a[2]
+
+
+        @partial(jax.jit, static_argnames=[])
+        def body_fun_early_stopping(iter, fa):
+            alpha, last_loss = fa
+            alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            new_alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
+            loss = l(new_alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            (alpha, _, loss) = jax.lax.cond(loss < last_loss, use_newAlpha, use_oldAlpha, (new_alpha, alpha, loss))
+            return alpha, loss
+
+
+        @partial(jax.jit, static_argnames=[])
+        def body_fun(iter, alpha):
+            loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
             alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
             alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
+            return alpha
         
+        if self.earlyStopping:
+            alpha, _ = jax.lax.fori_loop(0, self.max_iteration, body_fun_early_stopping, (alpha, 1000))
+        else:
+            alpha = jax.lax.fori_loop(0, self.max_iteration, body_fun, alpha)
+
         return alpha
-    
+        
 
     def plain_optimize(self, alpha):
 
@@ -141,8 +168,8 @@ class GradientDescentOptimizer:
 
 
 gdo = GradientDescentOptimizer()
-jitLoop = False
-dualOptimization = True
+jitLoop = True
+dualOptimization = False
 
 o = jax.jit(gdo.jit_optimize) if jitLoop else gdo.dual_optimize if dualOptimization else gdo.plain_optimize 
 
@@ -150,6 +177,9 @@ st = time.time()
 result_alpha = o(gdo.trajectory.alpha)
 et = time.time()
 print("took", 1000*(et-st), "ms")
+
+result_cost = gdo.trajectory.compute_trajectory_cost(result_alpha, gdo.lambda_constraint, gdo.lambda_2_constraint, gdo.lambda_max_cost)
+print("result cost", result_cost, "constraint fulfiled", gdo.trajectory.constraintsFulfilled(result_alpha, verbose=True))
 
 np_trajectory = np.array(gdo.trajectory.evaluate(result_alpha, gdo.trajectory.km, gdo.trajectory.jac))
 np.savetxt("gd_trajectory_result.txt", np_trajectory)

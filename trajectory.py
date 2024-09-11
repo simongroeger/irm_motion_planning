@@ -5,9 +5,9 @@ from math import atan2, sin, cos, sqrt
 
 import jax
 import jax.numpy as jnp
+from functools import partial
 
 from environment import Environment
-
 
 
 def rbf_kernel(x_1, x_2, rbf_var):
@@ -34,13 +34,15 @@ class Trajectory:
 
     def create_kernel_matrix(self, kernel_f, x, x2):
         a, b = jnp.meshgrid(x, x2)
-        kernel_matrix = kernel_f(a,b, self.rbf_var)
+        kernel_matrix = kernel_f(a, b, self.rbf_var)
         return kernel_matrix
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def evaluate(self, alpha, kernel_matrix, jac):
         return kernel_matrix @ alpha @ jac
 
+    @partial(jax.jit, static_argnames=['self'])
     def eval_any(self, alpha, kernel_f, support_x, eval_x, jac):
         return self.evaluate(alpha, self.create_kernel_matrix(kernel_f, eval_x, support_x), jac)
 
@@ -62,6 +64,7 @@ class Trajectory:
         self.alpha = np.linalg.solve(self.km, straight_line @ np.linalg.inv(self.jac))
         
 
+    @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
     def compute_point_cost(self, f, lambda_max_cost):
         cost_v = self.env.compute_cost(f)
         max_cost = jnp.max(cost_v)
@@ -70,11 +73,13 @@ class Trajectory:
         return cost
 
 
+    @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
     def compute_trajectory_obstacle_cost(self, trajectory, lambda_max_cost):
         f = self.env.fk(trajectory)
         return self.compute_point_cost(f, lambda_max_cost)
         
 
+    @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
     def compute_full_trajectory_obstacle_cost(self, trajectory, lambda_max_cost):
         f1 = self.env.fk_joint(trajectory, 1)
         f2 = self.env.fk_joint(trajectory, 2)
@@ -118,6 +123,7 @@ class Trajectory:
         return True
     
 
+    @partial(jax.jit, static_argnames=['self'])
     def start_goal_cost(self, trajectory):
         s = trajectory[0]
         g = trajectory[self.N_timesteps-1]
@@ -125,21 +131,25 @@ class Trajectory:
         return loss
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def start_goal_velocity_cost(self, joint_velocity):
         loss = jnp.sum(jnp.square(joint_velocity[0])) + jnp.sum(jnp.square(joint_velocity[-1]))
         return loss
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def joint_limit_cost(self, trajectory):
         loss = jnp.sum(jnp.square((trajectory - self.mean_joint_position) / self.std_joint_position)) / self.N_timesteps
         return loss
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def joint_velocity_limit_cost(self, joint_velocity):
         loss = jnp.sum(jnp.square(joint_velocity / self.max_joint_velocity)) / self.N_timesteps
         return loss
 
 
+    @partial(jax.jit, static_argnames=['self', 'lambda_constraint', 'lambda_2_constraint', 'lambda_max_cost'])
     def compute_trajectory_cost(self, alpha, lambda_constraint, lambda_2_constraint, lambda_max_cost):
         trajectory = self.evaluate(alpha, self.km, self.jac)
         joint_velocity = self.evaluate(alpha, self.dkm, self.jac)

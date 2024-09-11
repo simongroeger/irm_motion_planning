@@ -5,6 +5,7 @@ from math import atan2, sin, cos, sqrt
 
 import jax
 import jax.numpy as jnp
+from functools import partial
 
 
 class Environment:
@@ -36,7 +37,7 @@ class Environment:
                                 [2, 3]
                             ])
             
-
+    @partial(jax.jit, static_argnames=['self'])
     def fk(self, config):
         c2 = config.reshape(-1, 3)
         c = jnp.cumsum(c2,axis=1)
@@ -45,7 +46,7 @@ class Environment:
         pos = jnp.stack((pos_x, pos_y))
         return pos
 
-
+    @partial(jax.jit, static_argnames=['self'])
     def fk_joint(self, config, joint_id):
         c2 = config.reshape(-1, 3)[:, :joint_id].reshape(-1, joint_id)
         c = jnp.cumsum(c2,axis=1)
@@ -56,6 +57,7 @@ class Environment:
         return pos
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def jacobian(self, config):
         c2 = config.reshape(-1, 3)
         c = jnp.cumsum(c2,axis=1)
@@ -70,6 +72,7 @@ class Environment:
         return j
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def compute_cost(self, f):
         t_len = f.shape[1]
         o_len = self.obstacles.shape[0]
