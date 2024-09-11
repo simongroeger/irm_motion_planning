@@ -100,6 +100,75 @@ class BacktrackingLineSearchOptimizer:
         return alpha
 
 
+    def jit_optimize(self, alpha):
+        trajectory = Trajectory()
+
+        l = jax.jit(trajectory.compute_trajectory_cost)
+        g = jax.jit(jax.grad(l))
+
+
+        @partial(jax.jit, static_argnames=[])
+        def bls_more(a):
+            bls_iter, bls_lr = a
+            bls_lr *= self.bls_beta_minus
+            return bls_iter, bls_lr
+        
+        @partial(jax.jit, static_argnames=[])
+        def bls_break(a):
+            bls_iter, bls_lr = a
+            bls_lr = bls_lr * self.bls_beta_plus
+            return self.bls_max_iter, bls_lr
+        
+        @partial(jax.jit, static_argnames=[])
+        def cond_fun(a):
+            bls_iter, bls_lr, _, _, _ = a
+            return bls_iter < self.bls_max_iter
+        
+        @partial(jax.jit, static_argnames=[])
+        def body_fun(a):
+            bls_iter, bls_lr, alpha, n_alpha_grad, loss = a
+            new_alpha = (1 - self.lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
+            new_loss = l(new_alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            required_loss = loss - self.bls_alpha * bls_lr * jnp.sum(alpha_grad * n_alpha_grad)
+            #print(" bls_iter", j, "bls_lr", bls_lr, "loss", new_loss, "req loss", required_loss)
+            
+            bls_iter, bls_lr = jax.lax.cond(new_loss > required_loss, bls_more, bls_break, (bls_iter, bls_lr))
+            return (bls_iter, bls_lr, alpha, n_alpha_grad, new_loss)
+
+
+        for outer_iter in range(self.max_outer_iteration):
+            bls_lr = self.bls_lr_start
+            for innner_iter in range(self.max_inner_iteration):
+
+                loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                #print(outer_iter, innner_iter, loss.item())
+
+                alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+
+                n_alpha_grad = alpha_grad / jnp.linalg.norm(alpha_grad) # normalized
+
+                _, bls_lr, _, _, new_loss = jax.lax.while_loop(cond_fun, body_fun, (0, bls_lr, alpha, n_alpha_grad, 0))
+
+                # end of current inner minimzation
+                if loss - new_loss < self.loop_loss_reduction:
+                    #print("end of inner loop minimzation too small loss change")
+                    break
+
+            if self.trajectory.constraintsFulfilled(alpha, verbose=False):
+                #print("constrained fulfiled and inner loop minimized, end")
+                break
+            elif innner_iter == 0:
+                #print("no gradient step possible in outer loop, end")
+                break                        
+            else: 
+                #print()
+                print("new outer loop", outer_iter+1, "at inner iter", innner_iter, "increase lambda")
+                self.lambda_constraint *= self.lambda_constraint_increase
+                self.lambda_2_constraint *= self.lambda_constraint_increase
+            
+
+        return alpha
+
     
 
 
@@ -107,9 +176,13 @@ class BacktrackingLineSearchOptimizer:
 
 blso = BacktrackingLineSearchOptimizer()
 
+jitLoop = False
+
+o = blso.jit_optimize if jitLoop else blso.optimize 
+
 st = time.time()
 
-result_alpha = blso.optimize(blso.trajectory.alpha)
+result_alpha = o(blso.trajectory.alpha)
 
 et = time.time()
 print("took", 1000*(et-st), "ms")

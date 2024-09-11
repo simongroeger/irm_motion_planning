@@ -58,7 +58,7 @@ class Trajectory:
 
         self.km = self.create_kernel_matrix(rbf_kernel, t, t)
         self.dkm = self.create_kernel_matrix(d_rbf_kernel, t, t)
-        self.jac = jnp.eye(3) + jax.random.normal(jax.random.PRNGKey(0), (3,3)) / 5
+        self.jac = jnp.eye(3) + 0.2 * jax.random.normal(jax.random.PRNGKey(0), (3,3))
 
         #fit_trajectory_to_straigth_line 
         self.alpha = np.linalg.solve(self.km, straight_line @ np.linalg.inv(self.jac))
