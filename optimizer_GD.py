@@ -32,14 +32,13 @@ class GradientDescentOptimizer:
         self.max_inner_iteration = 200
         self.max_outer_iteration = 5
 
+        self.earlyStopping = True
+
         self.lambda_constraint_increase = 10
 
         self.lr = 0.002
         self.dual_lr = [0.002, 0.00002, 0.00001, 0.00001, 0.00001]
 
-        self.earlyStopping = False
-
-        self.lambda_constraint_increase = 10
 
         self.loop_loss_reduction = 0.001
         self.dual_loop_loss_reduction = [0.001, 0.0001, 0.0001, 0.0001, 0.0001]
@@ -78,7 +77,7 @@ class GradientDescentOptimizer:
 
         @partial(jax.jit, static_argnames=[])
         def body_fun(iter, alpha):
-            loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            #loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
             alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
             alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
             return alpha
@@ -168,8 +167,8 @@ class GradientDescentOptimizer:
 
 
 gdo = GradientDescentOptimizer()
-jitLoop = True
-dualOptimization = False
+jitLoop = False
+dualOptimization = True
 
 o = jax.jit(gdo.jit_optimize) if jitLoop else gdo.dual_optimize if dualOptimization else gdo.plain_optimize 
 

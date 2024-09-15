@@ -20,7 +20,7 @@ class Environment:
         self.start_config = jnp.array([0.0, 0.0, 0.0])
         self.goal_config = jnp.array([1.2, 1.0, 0.3])
 
-        self.eps_velocity = 0.05
+        self.eps_velocity = 0.01
         self.eps_distance = 0.01
 
         self.obstacles = jnp.array([     
