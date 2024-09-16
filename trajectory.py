@@ -137,7 +137,7 @@ class Trajectory:
 
     @partial(jax.jit, static_argnames=['self'])
     def joint_velocity_limit_cost(self, joint_velocity):
-        loss = jnp.sum(jnp.square(joint_velocity / self.max_joint_velocity)) / self.N_timesteps
+        loss = jnp.sum(jnp.square(joint_velocity / self.env.max_joint_velocity)) / self.N_timesteps
         return loss
 
 
@@ -149,8 +149,8 @@ class Trajectory:
         toc = self.compute_trajectory_obstacle_cost(trajectory, lambda_max_cost) 
         sgpc = self.start_goal_cost(trajectory)
         sgvc = self.start_goal_velocity_cost(joint_velocity)
-        jpc = 0 #self.joint_limit_cost(trajectory) if not self.joint_position_constraint(trajectory) else 0
-        jvc = 0 #self.joint_velocity_limit_cost(joint_velocity) if not self.joint_velocity_constraint(joint_velocity) else 0
+        jpc = self.joint_limit_cost(trajectory)
+        jvc = self.joint_velocity_limit_cost(joint_velocity)
         return toc + lambda_constraint * (sgpc + sgvc) + lambda_2_constraint * (jpc + jvc)
 
 

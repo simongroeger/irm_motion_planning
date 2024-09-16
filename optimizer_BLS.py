@@ -198,4 +198,4 @@ result_cost = blso.trajectory.compute_trajectory_cost(result_alpha, blso.lambda_
 print("result cost", result_cost, "constraint fulfiled", blso.trajectory.constraintsFulfilled(result_alpha, verbose=True))
 
 np_trajectory = np.array(blso.trajectory.evaluate(result_alpha, blso.trajectory.km, blso.trajectory.jac))
-np.savetxt("bls_trajectory_result.txt", np_trajectory)
+np.savetxt("visualization/bls_trajectory_result.txt", np_trajectory)
