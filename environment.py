@@ -80,19 +80,19 @@ class Environment:
         pos_x = ll @ jnp.cos(c).T
         pos_y = ll @ jnp.sin(c).T
         pos = jnp.stack((pos_x, pos_y))
-        return pos
+        return pos[0, 0]
 
 
     @partial(jax.jit, static_argnames=['self'])
     def jacobian(self, config):
         c2 = config.reshape(-1, 3)
         c = jnp.cumsum(c2,axis=1)
-        
+
         x = - jnp.multiply(self.link_length, jnp.sin(c))
-        reverse_cumsum_x = x + jnp.sum(x,axis=1) - jnp.cumsum(x,axis=1)
+        reverse_cumsum_x = x + jnp.expand_dims(jnp.sum(x,axis=1), 1) - jnp.cumsum(x,axis=1)
 
         y = jnp.multiply(self.link_length, jnp.cos(c))
-        reverse_cumsum_y = y + jnp.sum(y,axis=1) - jnp.cumsum(y,axis=1)
+        reverse_cumsum_y = y + jnp.expand_dims(jnp.sum(y,axis=1), 1) - jnp.cumsum(y,axis=1)
         
         j = jnp.stack((reverse_cumsum_x, reverse_cumsum_y))
         return j
@@ -106,24 +106,45 @@ class Environment:
         o_expand = jnp.expand_dims(self.obstacles, 2) @ jnp.ones((1, 1, t_len))
         o_reshape = o_expand.transpose((1,2,0))
 
-        cost_v = jnp.sum(0.8 / (0.5 + jnp.linalg.norm(f_expand - o_reshape, axis=0)), axis=1)
+        cost_v = jnp.sum(0.8 / (0.5 + 0.5 * jnp.sum(jnp.square(f_expand - o_reshape), axis=0)), axis=1)
         return cost_v
+    
+
+    @partial(jax.jit, static_argnames=['self'])
+    def compute_cost_vg(self, f):
+        t_len = f.shape[1]
+        o_len = self.obstacles.shape[0]
+        f_expand = jnp.expand_dims(f, 2) @ jnp.ones((1, 1, o_len))
+        o_expand = jnp.expand_dims(self.obstacles, 2) @ jnp.ones((1, 1, t_len))
+        o_reshape = o_expand.transpose((1,2,0))
+
+        fo_dist = f_expand - o_reshape
+        f_norm = jnp.sum(jnp.square(fo_dist), axis=0)
+        cost_v = jnp.sum(0.8 / (0.5 + 0.5 * f_norm), axis=1)
+        cost_g = jnp.sum(-0.8 * fo_dist / jnp.square(0.5 + 0.5 * f_norm), axis=2)
+        return cost_v, cost_g
+
+
+    @partial(jax.jit, static_argnames=['self'])
+    def compute_cost_g(self, f):
+        t_len = f.shape[1]
+        o_len = self.obstacles.shape[0]
+        f_expand = jnp.expand_dims(f, 2) @ jnp.ones((1, 1, o_len))
+        o_expand = jnp.expand_dims(self.obstacles, 2) @ jnp.ones((1, 1, t_len))
+        o_reshape = o_expand.transpose((1,2,0))
+
+        fo_dist = f_expand - o_reshape
+        f_norm = jnp.sum(jnp.square(fo_dist), axis=0)
+        cost_g = jnp.sum(-0.8 * fo_dist / jnp.square(0.5 + 0.5 * f_norm), axis=2)
+        return cost_g
 
 
     def start_goal_position_constraint_fulfilled(self, s, g):
-        if jnp.sum(jnp.square(s-self.start_config)) > jnp.square(self.eps_distance):
-            return False
-        if jnp.sum(jnp.square(g-self.goal_config)) > jnp.square(self.eps_distance):
-            return False
-        return True
+        return jnp.linalg.norm(s-self.start_config) < self.eps_distance and jnp.linalg.norm(g-self.goal_config) < self.eps_distance
 
 
     def start_goal_velocity_constraint_fulfilled(self, vs, vg):
-        if jnp.sum(jnp.square(vs)) > jnp.square(self.eps_velocity):
-            return False
-        if jnp.sum(jnp.square(vg)) > jnp.square(self.eps_velocity):
-            return False
-        return True
+        return jnp.linalg.norm(vs) < self.eps_velocity and jnp.linalg.norm(vg) < self.eps_velocity
 
 
     def joint_position_constraint(self, trajectory):

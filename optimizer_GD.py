@@ -24,6 +24,10 @@ os.environ['TF_XLA_FLAGS'] = (
 
 np.set_printoptions(precision=4)
 
+jax.config.update('jax_platform_name', 'cpu')
+
+
+
 class GradientDescentOptimizer:
     def __init__(self, earlyStopping, jitLoop, dualOptimization):
         
@@ -51,16 +55,22 @@ class GradientDescentOptimizer:
 
         self.trajectory = Trajectory()
 
+        self.loss_fn = jax.jit(self.trajectory.compute_trajectory_cost)
+        self.gradient_fn = jax.jit(self.trajectory.compute_trajectory_cost_g)
+
+        _ = self.loss_fn(self.trajectory.alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+        _ = self.gradient_fn(self.trajectory.alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
 
     def optimize(self, alpha):
-        o = jax.jit(self.jit_optimize) if self.jitLoop else self.dual_optimize if self.dualOptimization else self.plain_optimize 
-        return o(alpha)
+        if self.jitLoop:
+            return jax.jit(self.jit_optimize)(alpha)
+        elif self.dualOptimization:
+            return self.dual_optimize(alpha)
+        else:
+            return self.plain_optimize(alpha)
 
 
     def jit_optimize(self, alpha):
-
-        l = jax.jit(self.trajectory.compute_trajectory_cost)
-        g = jax.jit(jax.grad(l))
 
         @partial(jax.jit, static_argnames=[])
         def use_newAlpha(a):
@@ -74,17 +84,17 @@ class GradientDescentOptimizer:
         @partial(jax.jit, static_argnames=[])
         def body_fun_early_stopping(iter, fa):
             alpha, last_loss = fa
-            alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            alpha_grad = self.gradient_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
             new_alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
-            loss = l(new_alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            loss = self.loss_fn(new_alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
             (alpha, _, loss) = jax.lax.cond(loss < last_loss, use_newAlpha, use_oldAlpha, (new_alpha, alpha, loss))
             return alpha, loss
 
 
         @partial(jax.jit, static_argnames=[])
         def body_fun(iter, alpha):
-            #loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
-            alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            #loss = self.loss_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            alpha_grad = self.gradient_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
             alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
             return alpha
         
@@ -98,53 +108,48 @@ class GradientDescentOptimizer:
 
     def plain_optimize(self, alpha):
 
-        l = jax.jit(self.trajectory.compute_trajectory_cost)
-        g = jax.jit(jax.grad(l))
-
         if self.earlyStopping:
-            last_loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            last_loss = self.loss_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
             for iter in range(self.max_iteration):
-                alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                alpha_grad = self.gradient_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
 
                 new_alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
                 
-                loss = l(new_alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                loss = self.loss_fn(new_alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
 
                 if last_loss - loss < self.loop_loss_reduction:
                     break
                 else:
-                    print(iter, loss.item())
+                    #print(iter, loss.item())
                     last_loss = loss
 
                 alpha = new_alpha
         else:
             for iter in range(self.max_iteration):
-                alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                alpha_grad = self.gradient_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
                 alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
                 
         return alpha
     
+
     def dual_optimize(self, alpha):
 
-        l = jax.jit(self.trajectory.compute_trajectory_cost)
-        g = jax.jit(jax.grad(l))
-
         for outer_iter in range(self.max_outer_iteration):
-            last_loss = l(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            last_loss = self.loss_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
             print("init loss", last_loss)
             for innner_iter in range(self.max_inner_iteration):
 
-                alpha_grad = g(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                alpha_grad = self.gradient_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
 
                 new_alpha = (1 - self.lambda_reg * self.dual_lr[outer_iter]) * alpha - self.dual_lr[outer_iter] * alpha_grad
                 
-                loss = l(new_alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                loss = self.loss_fn(new_alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
 
-                print(outer_iter, innner_iter, loss.item())
+                # print(outer_iter, innner_iter, loss.item())
 
                 # end of current inner minimzation
                 if last_loss - loss < self.dual_loop_loss_reduction[outer_iter]:
-                    print("end of inner loop minimzation too small loss change", last_loss, loss.item())
+                    # print("end of inner loop minimzation too small loss change", last_loss, loss.item())
                     break
                 else:
                     last_loss = loss
@@ -153,7 +158,7 @@ class GradientDescentOptimizer:
 
 
 
-            if self.trajectory.constraintsFulfilled(alpha, verbose=True):
+            if self.trajectory.constraintsFulfilled(alpha):
                 print("constrained fulfiled and inner loop minimized, end")
                 break                    
             else: 
@@ -164,20 +169,29 @@ class GradientDescentOptimizer:
         return alpha
         
         
-        
+# conditions: mask jnp where
+# vmap
+# jax profile to get plot
+# https://www.matrixcalculus.org/ for analytic gradient
 
+gdo = GradientDescentOptimizer(earlyStopping=True, jitLoop=False, dualOptimization=False)
 
+profiling = False
+if profiling:
+    with jax.profiler.trace("/home/simon/irm_motion_planning/jax-trace", create_perfetto_link=True):
+        # Run the operations to be profiled
+        result_alpha = gdo.optimize(gdo.trajectory.alpha.copy())
+        result_alpha.block_until_ready()
 
-gdo = GradientDescentOptimizer(earlyStopping=True, jitLoop=True, dualOptimization=True)
-
-st = time.time()
-result_alpha = gdo.optimize(gdo.trajectory.alpha.copy())
-et = time.time()
-print("took", 1000*(et-st), "ms")
+else:
+    st = time.time()
+    result_alpha = gdo.optimize(gdo.trajectory.alpha.copy())
+    et = time.time()
+    print("took", 1000*(et-st), "ms")
 
 result_cost = gdo.trajectory.compute_trajectory_cost(result_alpha, 0, 0, gdo.lambda_max_cost)
-result_constraints = gdo.trajectory.constraintsFulfilled(result_alpha, verbose=True)
+result_constraints = gdo.trajectory.constraintsFulfilledVerbose(result_alpha, verbose=True)
 print("result cost unconstraint", result_cost, "constraint fulfiled", result_constraints)
 
 np_trajectory = np.array(gdo.trajectory.evaluate(result_alpha, gdo.trajectory.km, gdo.trajectory.jac))
-np.savetxt("visualization/gd_trajectory_result.txt", np_trajectory)
+np.savetxt("gd_trajectory_result.txt", np_trajectory)
