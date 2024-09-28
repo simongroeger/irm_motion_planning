@@ -26,6 +26,8 @@ class Trajectory:
 
         self.rbf_var = 0.1
 
+        self.constraint_violating_dependant_loss = True
+
         self.mean_joint_position = 0.5*(self.env.max_joint_position + self.env.min_joint_position)
         self.std_joint_position = self.env.max_joint_position - self.mean_joint_position
 
@@ -182,14 +184,19 @@ class Trajectory:
         # joint poisiton limit
         if not self.env.joint_position_constraint(trajectory):
             if verbose:
-                print("joint limit exceeded")
+                print("joint limit exceeded with", trajectory.max(), trajectory.min())
             result = False
+        elif verbose:
+            print("ok joint limit with", trajectory.max(), trajectory.min())
         
         #joint velocity limit
         if not self.env.joint_velocity_constraint(joint_velocity):
             if verbose:
-                print("joint velocity exceeded")
+                print("joint velocity exceeded with", jnp.abs(joint_velocity).max())
             result = False
+        elif verbose:
+            print("ok velocity limit with", jnp.abs(joint_velocity).max())
+
 
         return result
     
@@ -248,37 +255,90 @@ class Trajectory:
 
     @partial(jax.jit, static_argnames=['self'])
     def joint_limit_cost(self, trajectory):
-        loss = 0.5 * jnp.sum(jnp.square((trajectory - self.mean_joint_position) / self.std_joint_position)) / self.N_timesteps
+        element_wise_loss = 0.5 * jnp.square((trajectory - self.mean_joint_position) / self.std_joint_position)
+
+        # Apply the violation mask if necessary
+        if self.constraint_violating_dependant_loss:
+            violation_mask_max = trajectory > self.env.max_joint_position
+            violation_mask_min = trajectory < self.env.min_joint_position
+            violation_mask = jnp.logical_or(violation_mask_max, violation_mask_min)
+            element_wise_loss = jnp.where(violation_mask, element_wise_loss, 0.0)
+            
+        loss = jnp.sum(element_wise_loss) / self.N_timesteps
         return loss
 
-
+    @partial(jax.jit, static_argnames=['self'])
     def joint_limit_cost_vg(self, trajectory):
-        loss = jnp.sum(jnp.square((trajectory - self.mean_joint_position) / self.std_joint_position)) / self.N_timesteps
-        gradient = ((trajectory - self.mean_joint_position) / jnp.square(self.std_joint_position)) / self.N_timesteps
+        element_wise_loss = 0.5 * jnp.square((trajectory - self.mean_joint_position) / self.std_joint_position)
+        element_wise_grad = (trajectory - self.mean_joint_position) / jnp.square(self.std_joint_position)
+
+        # Apply the violation mask if necessary
+        if self.constraint_violating_dependant_loss:
+            violation_mask_max = trajectory > self.env.max_joint_position
+            violation_mask_min = trajectory < self.env.min_joint_position
+            violation_mask = jnp.logical_or(violation_mask_max, violation_mask_min)
+            element_wise_loss = jnp.where(violation_mask, element_wise_loss, 0.0)
+            element_wise_grad = jnp.where(violation_mask, element_wise_grad, 0.0)
+            
+        loss = jnp.sum(element_wise_loss) / self.N_timesteps
+        gradient = element_wise_grad / self.N_timesteps   
         return loss, gradient
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def joint_limit_cost_g(self, trajectory):
-        gradient = ((trajectory - self.mean_joint_position) / jnp.square(self.std_joint_position)) / self.N_timesteps
+        element_wise_grad = (trajectory - self.mean_joint_position) / jnp.square(self.std_joint_position)
+
+        # Apply the violation mask if necessary
+        if self.constraint_violating_dependant_loss:
+            violation_mask_max = trajectory > self.env.max_joint_position
+            violation_mask_min = trajectory < self.env.min_joint_position
+            violation_mask = jnp.logical_or(violation_mask_max, violation_mask_min)
+            element_wise_grad = jnp.where(violation_mask, element_wise_grad, 0.0)
+            
+        gradient = element_wise_grad / self.N_timesteps   
         return gradient
 
 
     @partial(jax.jit, static_argnames=['self'])
     def joint_velocity_limit_cost(self, joint_velocity):
-        loss = 0.5 * jnp.sum(jnp.square(joint_velocity / self.env.max_joint_velocity)) / self.N_timesteps
+        element_wise_loss = 0.5 * jnp.square(joint_velocity / self.env.max_joint_velocity)
+
+        # Apply the violation mask if necessary
+        if self.constraint_violating_dependant_loss:
+            violation_mask = jnp.abs(joint_velocity) > self.env.max_joint_velocity
+            element_wise_loss = jnp.where(violation_mask, element_wise_loss, 0.0)
+            
+        loss = jnp.sum(element_wise_loss) / self.N_timesteps
         return loss
     
 
     @partial(jax.jit, static_argnames=['self'])
     def joint_velocity_limit_cost_vg(self, joint_velocity):
-        loss = 0.5 * jnp.sum(jnp.square(joint_velocity / self.env.max_joint_velocity)) / self.N_timesteps
-        gradient = ((joint_velocity) / jnp.square(self.env.max_joint_velocity)) / self.N_timesteps
+        element_wise_loss = 0.5 * jnp.square(joint_velocity / self.env.max_joint_velocity)
+        element_wise_grad = joint_velocity / jnp.square(self.env.max_joint_velocity)
+
+        # Apply the violation mask if necessary
+        if self.constraint_violating_dependant_loss:
+            violation_mask = jnp.abs(joint_velocity) > self.env.max_joint_velocity
+            element_wise_loss = jnp.where(violation_mask, element_wise_loss, 0.0)
+            element_wise_grad = jnp.where(violation_mask, element_wise_grad, 0.0)
+        
+        loss = jnp.sum(element_wise_loss) / self.N_timesteps
+        gradient = element_wise_grad / self.N_timesteps   
         return loss, gradient
 
 
     @partial(jax.jit, static_argnames=['self'])
     def joint_velocity_limit_cost_g(self, joint_velocity):
-        gradient = ((joint_velocity) / jnp.square(self.env.max_joint_velocity)) / self.N_timesteps
+        element_wise_grad = joint_velocity / jnp.square(self.env.max_joint_velocity)
+
+        # Apply the violation mask if necessary
+        if self.constraint_violating_dependant_loss:
+            violation_mask = jnp.abs(joint_velocity) > self.env.max_joint_velocity
+            element_wise_grad = jnp.where(violation_mask, element_wise_grad, 0.0)
+        
+        gradient = element_wise_grad / self.N_timesteps   
         return gradient
 
 

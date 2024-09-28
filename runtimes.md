@@ -6,8 +6,8 @@
 | --------------------------------- | ----------- | ------------- |
 | Gradient Descent                  | 180         | 27.0          |
 | Gradient Descent EarlyStopping    | 200         | 36.2          |
-| Gradient Descent Dual Loop        | -           | 65.3          |
-| Backtracking Line Search          | 476         | 109.4         |
+| Gradient Descent Dual Loop        | -           | 57.3          |
+| Backtracking Line Search          | 476         | 105.7         |
 
 | GPU                               | Jitted Loop | Not Jitted    |
 | --------------------------------- | ----------- | ------------- |
