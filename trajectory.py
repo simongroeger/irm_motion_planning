@@ -50,7 +50,7 @@ class Trajectory:
 
     def initTrajectory(self):
         t = jnp.linspace(0, 1, self.N_timesteps)
-        c = 3 * t**2 - 2 * t**3
+        c = 6 * t**5 - 15 * t**4 + 10*t**3
         straight_line = jnp.stack((
             self.env.start_config[0] + (self.env.goal_config[0] - self.env.start_config[0]) * c,
             self.env.start_config[1] + (self.env.goal_config[1] - self.env.start_config[1]) * c,
@@ -84,15 +84,12 @@ class Trajectory:
         idx_max = jnp.argmax(cost_v)
 
         # Gradient w.r.t. cost_v (backpropagating through max and avg operations)
+        grad_avg_cost_v = jnp.ones((1, t_len)) / t_len  # Derivative of avg function
         grad_max_cost_v = jnp.zeros((1, t_len))
         grad_max_cost_v = grad_max_cost_v.at[0, idx_max].set(1)  # Derivative of max function
         
-        grad_avg_cost_v = jnp.ones((1, t_len)) / t_len  # Derivative of avg function
-        
         # Combine gradients with respect to cost_v
-        grad_cost_v_combined = (
-            lambda_max_cost * grad_max_cost_v + (1 - lambda_max_cost) * grad_avg_cost_v
-        )
+        grad_cost_v_combined = lambda_max_cost * grad_max_cost_v + (1 - lambda_max_cost) * grad_avg_cost_v
 
         # Chain rule: propagate gradients back to f
         cost_result_v = jnp.dot(grad_cost_v_combined, cost_v.T)
@@ -110,15 +107,12 @@ class Trajectory:
         idx_max = jnp.argmax(cost_v)
 
         # Gradient w.r.t. cost_v (backpropagating through max and avg operations)
+        grad_avg_cost_v = jnp.ones((1, t_len)) / t_len  # Derivative of avg function
         grad_max_cost_v = jnp.zeros((1, t_len))
         grad_max_cost_v = grad_max_cost_v.at[0, idx_max].set(1)  # Derivative of max function
-        
-        grad_avg_cost_v = jnp.ones((1, t_len)) / t_len  # Derivative of avg function
-        
+    
         # Combine gradients with respect to cost_v
-        grad_cost_v_combined = (
-            lambda_max_cost * grad_max_cost_v + (1 - lambda_max_cost) * grad_avg_cost_v
-        )
+        grad_cost_v_combined = lambda_max_cost * grad_max_cost_v + (1 - lambda_max_cost) * grad_avg_cost_v
 
         # Chain rule: propagate gradients back to f
         cost_result_g = jnp.multiply(grad_cost_v_combined, cost_g)
@@ -136,38 +130,30 @@ class Trajectory:
     @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
     def compute_trajectory_obstacle_cost_vg(self, trajectory, lambda_max_cost):
         f = self.env.fk(trajectory)
-        
-        jacobian = self.env.jacobian(trajectory)
-        
         cost_v, cost_g = self.compute_point_cost_vg(f, lambda_max_cost)
-
+        jacobian = self.env.jacobian(trajectory)
         grad_trajectory = jnp.einsum('ij,ijk->jk', cost_g, jacobian)
-
         return cost_v, grad_trajectory
     
 
     @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
     def compute_trajectory_obstacle_cost_g(self, trajectory, lambda_max_cost):
         f = self.env.fk(trajectory)
-        
-        jacobian = self.env.jacobian(trajectory)
-        
         cost_g = self.compute_point_cost_g(f, lambda_max_cost)
-
+        jacobian = self.env.jacobian(trajectory)
         grad_trajectory = jnp.einsum('ij,ijk->jk', cost_g, jacobian)
-
         return grad_trajectory
         
 
+    @partial(jax.jit, static_argnames=['self'])
     def constraintsFulfilled(self, alpha):
-        trajectory = jax.jit(self.evaluate, backend='cpu')(alpha, self.km, self.jac)
-        joint_velocity = jax.jit(self.evaluate, backend='cpu')(alpha, self.dkm, self.jac)
+        trajectory = self.evaluate(alpha, self.km, self.jac)
+        joint_velocity = self.evaluate(alpha, self.dkm, self.jac)
         
-        # start and goal position
-        return self.env.start_goal_position_constraint_fulfilled(trajectory[0], trajectory[-1]) \
-            and self.env.start_goal_velocity_constraint_fulfilled(joint_velocity[0], joint_velocity[-1]) \
-            and self.env.joint_position_constraint(trajectory) \
-            and self.env.joint_velocity_constraint(joint_velocity)
+        return jnp.logical_and(self.env.start_goal_position_constraint_fulfilled(trajectory[0], trajectory[-1]),
+            jnp.logical_and(self.env.start_goal_velocity_constraint_fulfilled(joint_velocity[0], joint_velocity[-1]),
+            jnp.logical_and(self.env.joint_position_constraint(trajectory),
+            self.env.joint_velocity_constraint(joint_velocity))))
     
     
     def constraintsFulfilledVerbose(self, alpha, verbose=True):
@@ -296,7 +282,7 @@ class Trajectory:
         return gradient
 
 
-    @partial(jax.jit, static_argnames=['self', 'lambda_constraint', 'lambda_2_constraint', 'lambda_max_cost'])
+    @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
     def compute_trajectory_cost(self, alpha, lambda_constraint, lambda_2_constraint, lambda_max_cost):
         trajectory = self.evaluate(alpha, self.km, self.jac)
         joint_velocity = self.evaluate(alpha, self.dkm, self.jac)
@@ -309,7 +295,7 @@ class Trajectory:
         return toc + lambda_constraint * (sgpc + sgvc) + lambda_2_constraint * (jpc + jvc)
 
         
-    @partial(jax.jit, static_argnames=['self', 'lambda_constraint', 'lambda_2_constraint', 'lambda_max_cost'])
+    @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
     def compute_trajectory_cost_vg(self, alpha, lambda_constraint, lambda_2_constraint, lambda_max_cost):
         trajectory = self.evaluate(alpha, self.km, self.jac)
         joint_velocity = self.evaluate(alpha, self.dkm, self.jac)
@@ -327,7 +313,7 @@ class Trajectory:
         return cost_v, cost_g
     
 
-    @partial(jax.jit, static_argnames=['self', 'lambda_constraint', 'lambda_2_constraint', 'lambda_max_cost'])
+    @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
     def compute_trajectory_cost_g(self, alpha, lambda_constraint, lambda_2_constraint, lambda_max_cost):
         trajectory = self.evaluate(alpha, self.km, self.jac)
         joint_velocity = self.evaluate(alpha, self.dkm, self.jac)

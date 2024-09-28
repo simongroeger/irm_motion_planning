@@ -13,14 +13,6 @@ from matplotlib.animation import FuncAnimation
 
 from trajectory import Trajectory
 
-import os
-os.environ['TF_XLA_FLAGS'] = (
-    '--xla_gpu_enable_triton_softmax_fusion=true '
-    '--xla_gpu_triton_gemm_any=True '
-    '--xla_gpu_enable_async_collectives=true '
-    '--xla_gpu_enable_latency_hiding_scheduler=true '
-    '--xla_gpu_enable_highest_priority_async_stream=true '
-)
 
 np.set_printoptions(precision=4)
 
@@ -28,7 +20,7 @@ jax.config.update('jax_platform_name', 'cpu')
 
 
 class BacktrackingLineSearchOptimizer:
-    def __init__(self):
+    def __init__(self, jitLoop):
         
         self.max_inner_iteration = 100
         self.max_outer_iteration = 5
@@ -48,25 +40,39 @@ class BacktrackingLineSearchOptimizer:
         self.bls_beta_plus = 1.2
         self.bls_max_iter = 20
 
+        self.jitLoop = jitLoop
+
         self.trajectory = Trajectory()
 
-        self.loss_fn = jax.jit(self.trajectory.compute_trajectory_cost)
-        self.gradient_fn = jax.jit(self.trajectory.compute_trajectory_cost_g)
-
-        _ = self.loss_fn(self.trajectory.alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
-        _ = self.gradient_fn(self.trajectory.alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+        # compile loss and gradient function
+        t1 = time.time()
+        _ = self.trajectory.compute_trajectory_cost(self.trajectory.alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+        _ = self.trajectory.compute_trajectory_cost_g(self.trajectory.alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+        _ = self.trajectory.constraintsFulfilled(self.trajectory.alpha)
+        t2 = time.time()
+        print("setup object, jit-compile took", 1000*(t2-t1), "ms")
 
 
     def optimize(self, alpha):
+        if self.jitLoop:
+            return self.jit_optimize(alpha)
+        else:
+            return self.plain_optimize(alpha)
+
+
+    def plain_optimize(self, alpha):
+
+        lambda_constraint = self.lambda_constraint
+        lambda_2_constraint = self.lambda_2_constraint
 
         for outer_iter in range(self.max_outer_iteration):
             bls_lr = self.bls_lr_start
             for innner_iter in range(self.max_inner_iteration):
 
-                loss = self.loss_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
-                #print(outer_iter, innner_iter, loss.item())
+                loss = self.trajectory.compute_trajectory_cost(alpha, lambda_constraint, lambda_2_constraint, self.lambda_max_cost)
+                # print(outer_iter, innner_iter, loss.item())
 
-                alpha_grad = self.gradient_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, lambda_constraint, lambda_2_constraint, self.lambda_max_cost)
 
                 n_alpha_grad = alpha_grad / jnp.linalg.norm(alpha_grad) # normalized
 
@@ -74,14 +80,14 @@ class BacktrackingLineSearchOptimizer:
 
                 for j in range(self.bls_max_iter):
                     new_alpha = (1 - self.lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
-                    new_loss = self.loss_fn(new_alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                    new_loss = self.trajectory.compute_trajectory_cost(new_alpha, lambda_constraint, lambda_2_constraint, self.lambda_max_cost)
                     required_loss = loss - self.bls_alpha * bls_lr * alpha_norm
-                    #print(" bls_iter", j, "bls_lr", bls_lr, "loss", new_loss, "req loss", required_loss)
+                    # print(" bls_iter", j, "bls_lr", bls_lr, "loss", new_loss, "req loss", required_loss)
                     
                     if new_loss > required_loss:
                         bls_lr *= self.bls_beta_minus
                     else:
-                        alpha = (1 - self.lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
+                        alpha = new_alpha
                         bls_lr = bls_lr * self.bls_beta_plus
                         break
 
@@ -90,24 +96,25 @@ class BacktrackingLineSearchOptimizer:
                     #print("end of inner loop minimzation too small loss change")
                     break
 
+            #print("end of inner loop minimzation with loss", loss)
+
+
             if self.trajectory.constraintsFulfilled(alpha):
                 #print("constrained fulfiled and inner loop minimized, end")
-                break
-            elif innner_iter == 0:
-                #print("no gradient step possible in outer loop, end")
-                break                        
+                break                    
             else: 
-                #print()
-                print("new outer loop", outer_iter+1, "at inner iter", innner_iter, "increase lambda")
-                self.lambda_constraint *= self.lambda_constraint_increase
-                self.lambda_2_constraint *= self.lambda_constraint_increase
+                #print("constraints violated, new outer loop", outer_iter+1, "at inner iter", innner_iter, "increase lambda")
+                lambda_constraint *= self.lambda_constraint_increase
+                lambda_2_constraint *= self.lambda_constraint_increase
             
-
         return alpha
 
-
+    @partial(jax.jit, static_argnames=['self'])
     def jit_optimize(self, alpha):
-        
+    
+        lambda_constraint = self.lambda_constraint
+        lambda_2_constraint = self.lambda_2_constraint
+
         @partial(jax.jit, static_argnames=[])
         def bls_more(a):
             bls_iter, bls_lr, alpha, new_alpha, loss, new_loss = a
@@ -128,7 +135,7 @@ class BacktrackingLineSearchOptimizer:
         def bls_body_fun(a):
             bls_iter, bls_lr, alpha, alpha_norm, n_alpha_grad, loss = a
             new_alpha = (1 - self.lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
-            new_loss = self.loss_fn(new_alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            new_loss = self.trajectory.compute_trajectory_cost(new_alpha, lambda_constraint, lambda_2_constraint, self.lambda_max_cost)
             required_loss = loss - self.bls_alpha * bls_lr * alpha_norm
             bls_iter, bls_lr, alpha, _, loss, _ = jax.lax.cond(new_loss > required_loss, bls_more, bls_break, (bls_iter+1, bls_lr, alpha, new_alpha, loss, new_loss))
             return (bls_iter, bls_lr, alpha, alpha_norm, n_alpha_grad, loss)
@@ -149,15 +156,15 @@ class BacktrackingLineSearchOptimizer:
         @partial(jax.jit, static_argnames=[])
         def inner_body_fun(a):
             inner_iter, iter_debug, alpha, bls_lr = a
-            loss = self.loss_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
-            alpha_grad = self.gradient_fn(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            loss = self.trajectory.compute_trajectory_cost(alpha, lambda_constraint, lambda_2_constraint, self.lambda_max_cost)
+            alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, lambda_constraint, lambda_2_constraint, self.lambda_max_cost)
             n_alpha_grad = alpha_grad / jnp.linalg.norm(alpha_grad) # normalized
             alpha_norm = jnp.sum(alpha_grad * n_alpha_grad)
             bls_iter, bls_lr, alpha, _, _, new_loss = jax.lax.while_loop(bls_cond_fun, bls_body_fun, (0, bls_lr, alpha, alpha_norm, n_alpha_grad, loss))
             a = jax.lax.cond(loss - new_loss < self.loop_loss_reduction, inner_break, inner_more, (inner_iter+1, inner_iter+1, alpha, bls_lr))
             return a
-
-
+        
+        
         for outer_iter in range(self.max_outer_iteration):
 
             st = time.time()
@@ -169,15 +176,15 @@ class BacktrackingLineSearchOptimizer:
             constraint_fulfilled = self.trajectory.constraintsFulfilled(alpha)
 
             ett = time.time()
-            print("loop took", 1000*(et-st), "ms, sonstraint took", 1000*(ett-et), "ms")
+            #print("loop took", 1000*(et-st), "ms, sonstraint took", 1000*(ett-et), "ms")
 
             if constraint_fulfilled:
-                print("constrained fulfiled and inner loop minimized, end")
+                #print("constrained fulfiled and inner loop minimized, end")
                 break
             else: 
-                print("new outer loop", outer_iter+1, "at inner iter", iter_debug, "increase lambda")
-                self.lambda_constraint *= self.lambda_constraint_increase
-                self.lambda_2_constraint *= self.lambda_constraint_increase
+                #print("new outer loop", outer_iter+1, "at inner iter", iter_debug, "increase lambda")
+                lambda_constraint *= self.lambda_constraint_increase
+                lambda_2_constraint *= self.lambda_constraint_increase
             
             
 
@@ -188,18 +195,28 @@ class BacktrackingLineSearchOptimizer:
 
 
 
-blso = BacktrackingLineSearchOptimizer()
+blso = BacktrackingLineSearchOptimizer(jitLoop=False)
 
-jitLoop = False
+profiling = False
+if profiling:
+    with jax.profiler.trace("/home/simon/irm_motion_planning/jax-trace", create_perfetto_link=True):
+        # Run the operations to be profiled
+        st = time.time()
+        n_times = 100
+        for i in range(n_times):
+            result_alpha = blso.optimize(blso.trajectory.alpha.copy())
+            jax.block_until_ready(result_alpha)
+        et = time.time()
+        print("took", 1000*(et-st)/n_times, "ms")
 
-o = blso.jit_optimize if jitLoop else blso.optimize 
-
-st = time.time()
-
-result_alpha = o(blso.trajectory.alpha)
-
-et = time.time()
-print("took", 1000*(et-st), "ms")
+else:
+    st = time.time()
+    n_times = 100
+    for i in range(n_times):
+        result_alpha = blso.optimize(blso.trajectory.alpha.copy())
+        jax.block_until_ready(result_alpha)
+    et = time.time()
+    print("took", 1000*(et-st)/n_times, "ms")
 
 result_cost = blso.trajectory.compute_trajectory_cost(result_alpha, 0, 0, blso.lambda_max_cost)
 print("result cost", result_cost, "constraint fulfiled", blso.trajectory.constraintsFulfilledVerbose(result_alpha, verbose=True))

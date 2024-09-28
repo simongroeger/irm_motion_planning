@@ -139,29 +139,29 @@ class Environment:
         return cost_g
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def start_goal_position_constraint_fulfilled(self, s, g):
-        return jnp.linalg.norm(s-self.start_config) < self.eps_distance and jnp.linalg.norm(g-self.goal_config) < self.eps_distance
+        start_constraint = jnp.linalg.norm(s-self.start_config) < self.eps_distance
+        goal_constraint = jnp.linalg.norm(g-self.goal_config) < self.eps_distance
+        return jnp.logical_and(start_constraint, goal_constraint)
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def start_goal_velocity_constraint_fulfilled(self, vs, vg):
-        return jnp.linalg.norm(vs) < self.eps_velocity and jnp.linalg.norm(vg) < self.eps_velocity
+        start_constraint = jnp.linalg.norm(vs) < self.eps_velocity
+        goal_constraint = jnp.linalg.norm(vg) < self.eps_velocity
+        return jnp.logical_and(start_constraint, goal_constraint)
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def joint_position_constraint(self, trajectory):
-        if trajectory.max() > self.max_joint_position:
-            return False 
-        if trajectory.min() < self.min_joint_position:
-            return False 
-        return True
+        max_constraint = trajectory.max() <= self.max_joint_position
+        min_constraint = trajectory.min() >= self.min_joint_position
+        return jnp.logical_and(max_constraint, min_constraint)
 
 
+    @partial(jax.jit, static_argnames=['self'])
     def joint_velocity_constraint(self, joint_velocity):
-        if jnp.abs(joint_velocity).max() > self.max_joint_velocity:
-            return False
-        return True
-
-
-
-
+        return jnp.abs(joint_velocity).max() <= self.max_joint_velocity
 
 
