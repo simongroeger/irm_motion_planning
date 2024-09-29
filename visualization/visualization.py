@@ -13,16 +13,18 @@ from matplotlib.animation import FuncAnimation
 import sys
 sys.path.insert(0, '..')
 
+import environment
 from environment import Environment
+from robot import Robot
 from trajectory import Trajectory
 
 
-def compute_point_obstacle_cost(env, x,y):
+def compute_point_obstacle_cost(x,y, env):
     cost = np.zeros_like(x)
     for i in range(x.shape[0]):
         for j in range(x.shape[1]):
             point = jnp.array([[x[i,j]], [y[i,j]]])
-            cost[i,j] = env.compute_cost(point).item()
+            cost[i,j] = environment.compute_cost(point, env.obstacles).item()
     return cost
 
 
@@ -36,7 +38,7 @@ def plot_loss_contour(fig, axs, env):
                     slice(-4, 4 + dx, dx)]
 
     #z = np.sin(x)**10 + np.cos(10 + y*x) * np.cos(x)
-    z = compute_point_obstacle_cost(env, x,y)
+    z = compute_point_obstacle_cost(x,y, env)
 
     # x and y are bounds, so z should be the value *inside* those bounds.
     # Therefore, remove the last value from the z array.
@@ -54,10 +56,11 @@ def plot_loss_contour(fig, axs, env):
     fig.tight_layout()
 
 
-env = Environment()
 tr = Trajectory()
+robot = Robot()
+env = Environment()
 
-trajectory = np.loadtxt("bls_trajectory_result.txt")
+trajectory = np.loadtxt("gd_trajectory_result.txt")
 N_timesteps = len(trajectory)
     
 fig, ((ax0, ax2, ax4), (ax1, ax5, ax3)) = plt.subplots(nrows=2, ncols=3)
@@ -66,11 +69,11 @@ fig, ((ax0, ax2, ax4), (ax1, ax5, ax3)) = plt.subplots(nrows=2, ncols=3)
 plot_loss_contour(fig, [ax0, ax2], env)
 
 #plot start and goal
-start_cart = env.fk(env.start_config)
+start_cart = robot.fk(env.start_config)
 ax0.plot(start_cart[0], start_cart[1], 'o', color="yellow", label="start_config")
 ax2.plot(start_cart[0], start_cart[1], 'o', color="yellow", label="start_config")
 
-goal_cart = env.fk(env.goal_config)
+goal_cart = robot.fk(env.goal_config)
 ax0.plot(goal_cart[0], goal_cart[1], 'o', color="gold", label="goal_config")
 ax2.plot(goal_cart[0], goal_cart[1], 'o', color="gold", label="goal_config")
 
@@ -82,10 +85,10 @@ straight_line = jnp.stack((
     env.start_config[2] + (env.goal_config[2] - env.start_config[2]) * c
 )).T
 
-cartesian_data = env.fk(straight_line)
+cartesian_data = robot.fk(straight_line)
 ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:gray', label="initial straight line trajectory")
 
-cartesian_data = env.fk(trajectory)
+cartesian_data = robot.fk(trajectory)
 ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='green', label="final ee trajectory")
 
 ax0.plot([0], [0], 'o', color="black", label="joint 0")
@@ -95,15 +98,15 @@ ax2.plot([0], [0], 'o', color="black", label="joint 0")
 # trajectory point cost over iteration
 trajectory_point_cost = np.zeros(N_timesteps)
 for i in range(N_timesteps):
-    trajectory_point_cost[i] = tr.compute_trajectory_obstacle_cost(trajectory[i], 0).item()
+    trajectory_point_cost[i] = tr.compute_trajectory_obstacle_cost(trajectory[i], env.obstacles, 0).item()
 ax3.plot(t, trajectory_point_cost, '-', color='grey')
 
 
 # final robot movement
 fin_movement = np.zeros((4, 2, N_timesteps))
-fin_movement[1] = env.fk_joint_1(trajectory)
-fin_movement[2] = env.fk_joint_2(trajectory)
-fin_movement[3] = env.fk_joint_3(trajectory)
+fin_movement[1] = robot.fk_joint_1(trajectory)
+fin_movement[2] = robot.fk_joint_2(trajectory)
+fin_movement[3] = robot.fk_joint_3(trajectory)
 ax2.plot(fin_movement[:,0,0], fin_movement[:,1,0], '-', color = 'black', label="robot")
 
 
