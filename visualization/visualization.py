@@ -19,7 +19,7 @@ from robot import Robot
 from trajectory import Trajectory
 
 
-def compute_point_obstacle_cost(x,y, env):
+def compute_point_obstacle_cost(x, y, env):
     cost = np.zeros_like(x)
     for i in range(x.shape[0]):
         for j in range(x.shape[1]):

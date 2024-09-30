@@ -1,33 +1,15 @@
 import numpy as np
 import time
-import matplotlib.pyplot as plt
-from math import atan2, sin, cos, sqrt
 
 import jax
 import jax.numpy as jnp
 from functools import partial
 
-from matplotlib.colors import BoundaryNorm
-from matplotlib.ticker import MaxNLocator
-from matplotlib.animation import FuncAnimation
-
 from trajectory import Trajectory
 from environment import Environment
 
-import os
-os.environ['TF_XLA_FLAGS'] = (
-    '--xla_gpu_enable_triton_softmax_fusion=true '
-    '--xla_gpu_triton_gemm_any=True '
-    '--xla_gpu_enable_async_collectives=true '
-    '--xla_gpu_enable_latency_hiding_scheduler=true '
-    '--xla_gpu_enable_highest_priority_async_stream=true '
-)
-
-np.set_printoptions(precision=4)
-
 jax.config.update('jax_platform_name', 'cpu')
-
-
+np.set_printoptions(precision=4)
 
 class GradientDescentOptimizer:
     def __init__(self, earlyStopping, jitLoop, dualOptimization):
@@ -177,40 +159,3 @@ class GradientDescentOptimizer:
                 lambda_jl_constraint *= self.lambda_constraint_increase
             
         return alpha
-        
-        
-# conditions: mask jnp where
-# vmap
-# jax profile to get plot
-# https://www.matrixcalculus.org/ for analytic gradient
-
-gdo = GradientDescentOptimizer(earlyStopping=True, jitLoop=False, dualOptimization=True)
-
-profiling = False
-if profiling:
-    with jax.profiler.trace("/home/simon/irm_motion_planning/jax-trace", create_perfetto_link=True):
-        # Run the operations to be profiled
-        st = time.time()
-        n_times = 10
-        for i in range(n_times):
-            result_alpha = gdo.optimize()
-            jax.block_until_ready(result_alpha)
-        et = time.time()
-        print("took", 1000*(et-st)/n_times, "ms")
-
-else:
-    st = time.time()
-    n_times = 10
-    for i in range(n_times):
-        result_alpha = gdo.optimize()
-        jax.block_until_ready(result_alpha)
-    et = time.time()
-    print("took", 1000*(et-st)/n_times, "ms")
-
-avg_result_cost = gdo.trajectory.compute_trajectory_cost(result_alpha, gdo.env.obstacles, gdo.env.start_config, gdo.env.goal_config, 0, 0, 0)
-max_result_cost = gdo.trajectory.compute_trajectory_cost(result_alpha, gdo.env.obstacles, gdo.env.start_config, gdo.env.goal_config, 0, 0, 1)
-print("result cost: ( avg", avg_result_cost, ", max", max_result_cost, "). constraint fulfiled", gdo.trajectory.constraintsFulfilledVerbose(result_alpha, gdo.env.start_config, gdo.env.goal_config, verbose=True))
-
-
-np_trajectory = np.array(gdo.trajectory.evaluate(result_alpha, gdo.trajectory.km, gdo.trajectory.jac))
-np.savetxt("gd_trajectory_result.txt", np_trajectory)
