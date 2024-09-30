@@ -59,8 +59,9 @@ def plot_loss_contour(fig, axs, env):
 tr = Trajectory()
 robot = Robot()
 env = Environment()
+#env.start_config = jnp.array([0.0, 0.5, -1.0])
 
-trajectory = np.loadtxt("gd_trajectory_result.txt")
+trajectory = np.loadtxt("bls_trajectory_result.txt")
 N_timesteps = len(trajectory)
     
 fig, ((ax0, ax2, ax4), (ax1, ax5, ax3)) = plt.subplots(nrows=2, ncols=3)

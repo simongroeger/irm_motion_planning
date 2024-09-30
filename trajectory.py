@@ -217,7 +217,7 @@ class Trajectory:
 
 
     @partial(jax.jit, static_argnames=['self'])
-    def joint_limit_cost(self, trajectory):
+    def joint_position_limit_cost(self, trajectory):
         element_wise_loss = 0.5 * jnp.square((trajectory - self.mean_joint_position) / self.std_joint_position)
 
         # Apply the violation mask if necessary
@@ -232,7 +232,7 @@ class Trajectory:
 
 
     @partial(jax.jit, static_argnames=['self'])
-    def joint_limit_cost_g(self, trajectory):
+    def joint_position_limit_cost_g(self, trajectory):
         element_wise_grad = (trajectory - self.mean_joint_position) / jnp.square(self.std_joint_position)
 
         # Apply the violation mask if necessary
@@ -273,30 +273,30 @@ class Trajectory:
 
 
     @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
-    def compute_trajectory_cost(self, alpha, obstacles, start_config, goal_config, lambda_constraint, lambda_2_constraint, lambda_max_cost):
+    def compute_trajectory_cost(self, alpha, obstacles, start_config, goal_config, lambda_sg_constraint, lambda_jl_constraint, lambda_max_cost):
         trajectory = self.evaluate(alpha, self.km, self.jac)
         joint_velocity = self.evaluate(alpha, self.dkm, self.jac)
 
         toc = self.compute_trajectory_obstacle_cost(trajectory, obstacles, lambda_max_cost) 
         sgpc = self.start_goal_cost(trajectory, start_config, goal_config)
         sgvc = self.start_goal_velocity_cost(joint_velocity)
-        jpc = self.joint_limit_cost(trajectory)
+        jpc = self.joint_position_limit_cost(trajectory)
         jvc = self.joint_velocity_limit_cost(joint_velocity)
-        return toc + lambda_constraint * (sgpc + sgvc) + lambda_2_constraint * (jpc + jvc)
+        return toc + lambda_sg_constraint * (sgpc + sgvc) + lambda_jl_constraint * (jpc + jvc)
     
 
     @partial(jax.jit, static_argnames=['self', 'lambda_max_cost'])
-    def compute_trajectory_cost_g(self, alpha, obstacles, start_config, goal_config, lambda_constraint, lambda_2_constraint, lambda_max_cost):
+    def compute_trajectory_cost_g(self, alpha, obstacles, start_config, goal_config, lambda_sg_constraint, lambda_jl_constraint, lambda_max_cost):
         trajectory = self.evaluate(alpha, self.km, self.jac)
         joint_velocity = self.evaluate(alpha, self.dkm, self.jac)
 
         toc_g = self.compute_trajectory_obstacle_cost_g(trajectory, obstacles, lambda_max_cost)
         sqpc_g = self.start_goal_cost_g(trajectory, start_config, goal_config)
         sqvc_g = self.start_goal_velocity_cost_g(joint_velocity)
-        jpc_g = self.joint_limit_cost_g(trajectory)
+        jpc_g = self.joint_position_limit_cost_g(trajectory)
         jvc_g = self.joint_velocity_limit_cost_g(joint_velocity)
 
-        cost_g = (self.km.T @ (toc_g + lambda_constraint * sqpc_g + lambda_2_constraint * jpc_g) + self.dkm.T @ (lambda_constraint * sqvc_g + lambda_2_constraint * jvc_g)) @ self.jac.T
+        cost_g = (self.km.T @ (toc_g + lambda_sg_constraint * sqpc_g + lambda_jl_constraint * jpc_g) + self.dkm.T @ (lambda_sg_constraint * sqvc_g + lambda_jl_constraint * jvc_g)) @ self.jac.T
 
         return cost_g
 

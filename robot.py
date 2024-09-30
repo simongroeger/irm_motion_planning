@@ -83,8 +83,6 @@ class Robot:
         return j
 
 
-
-
     @partial(jax.jit, static_argnames=['self'])
     def start_goal_position_constraint_fulfilled(self, s, g, start_config, goal_config):
         start_constraint = jnp.linalg.norm(s-start_config) < self.eps_distance

@@ -49,9 +49,9 @@ class GradientDescentOptimizer:
         self.loop_loss_reduction = 1e-3
         self.dual_loop_loss_reduction = [1e-3, 1e-4, 1e-4, 1e-4, 1e-4]
 
-        self.lambda_reg = 0.0001
-        self.lambda_constraint = 1
-        self.lambda_2_constraint = 0.2
+        self.lambda_reg = 1e-4
+        self.lambda_sg_constraint = 0.5
+        self.lambda_jl_constraint = 0.2
         self.lambda_max_cost = 0.5
 
         self.env = Environment()
@@ -67,7 +67,7 @@ class GradientDescentOptimizer:
     def optimize(self):
         init_alpha = self.trajectory.initTrajectory(self.env.start_config, self.env.goal_config)
         if self.jitLoop:
-            return self.jit_optimize(init_alpha)
+            return self.jit_optimize(init_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config)
         elif self.dualOptimization:
             return self.dual_optimize(init_alpha)
         else:
@@ -75,7 +75,7 @@ class GradientDescentOptimizer:
 
 
     @partial(jax.jit, static_argnames=['self'])
-    def jit_optimize(self, alpha):
+    def jit_optimize(self, alpha, obstacles, start_config, goal_config):
 
         @partial(jax.jit, static_argnames=[])
         def use_newAlpha(a):
@@ -89,17 +89,17 @@ class GradientDescentOptimizer:
         @partial(jax.jit, static_argnames=[])
         def body_fun_early_stopping(iter, fa):
             alpha, last_loss = fa
-            alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, obstacles, start_config, goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
             new_alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
-            loss = self.trajectory.compute_trajectory_cost(new_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            loss = self.trajectory.compute_trajectory_cost(new_alpha, obstacles, start_config, goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
             (alpha, _, loss) = jax.lax.cond(loss < last_loss, use_newAlpha, use_oldAlpha, (new_alpha, alpha, loss))
             return alpha, loss
 
 
         @partial(jax.jit, static_argnames=[])
         def body_fun(iter, alpha):
-            #loss = self.trajectory.compute_trajectory_cost(alpha, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
-            alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            #loss = self.trajectory.compute_trajectory_cost(alpha, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
+            alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, obstacles, start_config, goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
             alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
             return alpha
         
@@ -114,13 +114,13 @@ class GradientDescentOptimizer:
     def plain_optimize(self, alpha):
 
         if self.earlyStopping:
-            last_loss = self.trajectory.compute_trajectory_cost(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+            last_loss = self.trajectory.compute_trajectory_cost(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
             for iter in range(self.max_iteration):
-                alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
 
                 new_alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
                 
-                loss = self.trajectory.compute_trajectory_cost(new_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                loss = self.trajectory.compute_trajectory_cost(new_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
 
                 if last_loss - loss < self.loop_loss_reduction:
                     print("break after", iter, "iteration")
@@ -132,7 +132,7 @@ class GradientDescentOptimizer:
                 alpha = new_alpha
         else:
             for iter in range(self.max_iteration):
-                alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_constraint, self.lambda_2_constraint, self.lambda_max_cost)
+                alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
                 alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
                 
         return alpha
@@ -140,19 +140,19 @@ class GradientDescentOptimizer:
 
     def dual_optimize(self, alpha):
 
-        lambda_constraint = self.lambda_constraint
-        lambda_2_constraint = self.lambda_2_constraint
+        lambda_sg_constraint = self.lambda_sg_constraint
+        lambda_jl_constraint = self.lambda_jl_constraint
 
         for outer_iter in range(self.max_outer_iteration):
-            last_loss = self.trajectory.compute_trajectory_cost(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, lambda_constraint, lambda_2_constraint, self.lambda_max_cost)
+            last_loss = self.trajectory.compute_trajectory_cost(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, lambda_sg_constraint, lambda_jl_constraint, self.lambda_max_cost)
             #print("init loss", last_loss)
             for innner_iter in range(self.max_inner_iteration):
 
-                alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, lambda_constraint, lambda_2_constraint, self.lambda_max_cost)
+                alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, lambda_sg_constraint, lambda_jl_constraint, self.lambda_max_cost)
 
                 new_alpha = (1 - self.lambda_reg * self.dual_lr[outer_iter]) * alpha - self.dual_lr[outer_iter] * alpha_grad
                 
-                loss = self.trajectory.compute_trajectory_cost(new_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, lambda_constraint, lambda_2_constraint, self.lambda_max_cost)
+                loss = self.trajectory.compute_trajectory_cost(new_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, lambda_sg_constraint, lambda_jl_constraint, self.lambda_max_cost)
 
                 # end of current inner minimzation
                 if last_loss - loss < self.dual_loop_loss_reduction[outer_iter]:
@@ -173,8 +173,8 @@ class GradientDescentOptimizer:
                 break                    
             else: 
                 #print("constraints violated, new outer loop", outer_iter+1, "at inner iter", innner_iter, "increase lambda")
-                lambda_constraint *= self.lambda_constraint_increase
-                lambda_2_constraint *= self.lambda_constraint_increase
+                lambda_sg_constraint *= self.lambda_constraint_increase
+                lambda_jl_constraint *= self.lambda_constraint_increase
             
         return alpha
         
@@ -184,7 +184,7 @@ class GradientDescentOptimizer:
 # jax profile to get plot
 # https://www.matrixcalculus.org/ for analytic gradient
 
-gdo = GradientDescentOptimizer(earlyStopping=True, jitLoop=True, dualOptimization=False)
+gdo = GradientDescentOptimizer(earlyStopping=True, jitLoop=False, dualOptimization=True)
 
 profiling = False
 if profiling:
@@ -193,8 +193,6 @@ if profiling:
         st = time.time()
         n_times = 10
         for i in range(n_times):
-            if i == 5:
-                gdo.env.start_config = jnp.array([0.0, 0.0, 0.2])
             result_alpha = gdo.optimize()
             jax.block_until_ready(result_alpha)
         et = time.time()
@@ -202,7 +200,7 @@ if profiling:
 
 else:
     st = time.time()
-    n_times = 1
+    n_times = 10
     for i in range(n_times):
         result_alpha = gdo.optimize()
         jax.block_until_ready(result_alpha)
