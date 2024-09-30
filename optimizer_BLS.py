@@ -20,30 +20,31 @@ jax.config.update('jax_platform_name', 'cpu')
 
 
 class BacktrackingLineSearchOptimizer:
-    def __init__(self, jitLoop):
+    def __init__(self, args):
         
-        self.max_inner_iteration = 200
-        self.max_outer_iteration = 10
+        self.jitLoop = args.jit_loop
 
-        self.lambda_constraint_increase = 10
+        self.max_inner_iteration = args.max_inner_iteration
+        self.max_outer_iteration = args.max_outer_iteration
 
-        self.loop_loss_reduction = 0.001
+        self.loop_loss_reduction = args.loop_loss_reduction
 
-        self.lambda_reg = 1e-4
-        self.lambda_sg_constraint = 0.5
-        self.lambda_jl_constraint = 0.2
-        self.lambda_max_cost = 0.8
+        self.lambda_constraint_increase = args.lambda_constraint_increase
+        self.lambda_sg_constraint = args.lambda_sg_constraint
+        self.lambda_jl_constraint = args.lambda_jl_constraint
 
-        self.bls_lr_start = 0.2
-        self.bls_alpha = 0.01
-        self.bls_beta_minus = 0.5
-        self.bls_beta_plus = 1.2
-        self.bls_max_iter = 20
+        self.lambda_max_cost = args.lambda_max_cost
+        self.lambda_reg = args.lambda_reg
 
-        self.jitLoop = jitLoop
+        self.bls_max_iter = args.max_bls_iteration
+        self.bls_lr_start = args.bls_lr_start
+        self.bls_alpha = args.bls_alpha
+        self.bls_beta_minus = args.bls_beta_minus
+        self.bls_beta_plus = args.bls_beta_plus
+
 
         self.env = Environment()
-        self.trajectory = Trajectory()
+        self.trajectory = Trajectory(args)
 
         # compile optimization incl loss and gradient function
         t1 = time.time()
@@ -67,7 +68,6 @@ class BacktrackingLineSearchOptimizer:
 
         for outer_iter in range(self.max_outer_iteration):
             bls_lr = self.bls_lr_start
-            t1 = time.time()
 
             for innner_iter in range(self.max_inner_iteration):
 
@@ -78,7 +78,7 @@ class BacktrackingLineSearchOptimizer:
 
                 n_alpha_grad = alpha_grad / jnp.linalg.norm(alpha_grad) # normalized
 
-                alpha_norm = jnp.sum(alpha_grad * n_alpha_grad)
+                alpha_norm = jnp.sum(alpha_grad.T @ n_alpha_grad)
 
                 for j in range(self.bls_max_iter):
                     new_alpha = (1 - self.lambda_reg * bls_lr) * alpha - bls_lr * n_alpha_grad
@@ -100,20 +100,18 @@ class BacktrackingLineSearchOptimizer:
 
             print("end of inner loop minimzation", outer_iter, "at inner iter", innner_iter, "with loss", loss)
 
-            t2 = time.time()
 
             if self.trajectory.constraintsFulfilled(alpha, self.env.start_config, self.env.goal_config):
-                print("constrained fulfiled and inner loop minimized, end")
+                print("constraints fulfiled, end")
                 break                    
             else: 
-                print("constraints violated, new outer loop", outer_iter+1, "increase lambda")
+                print("constraints violated")
                 lambda_sg_constraint *= self.lambda_constraint_increase
                 lambda_jl_constraint *= self.lambda_constraint_increase
 
-            t3 = time.time()
-            print("loop took", 1000*(t2-t1), "ms, sonstraint took", 1000*(t3-t2), "ms")
 
         return alpha
+
 
     @partial(jax.jit, static_argnames=['self'])
     def jit_optimize(self, alpha, obstacles, start_config, goal_config):
@@ -155,7 +153,7 @@ class BacktrackingLineSearchOptimizer:
             loss = self.trajectory.compute_trajectory_cost(alpha, obstacles, start_config, goal_config, lambda_sg_constraint, lambda_jl_constraint, self.lambda_max_cost)
             alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, obstacles, start_config, goal_config, lambda_sg_constraint, lambda_jl_constraint, self.lambda_max_cost)
             n_alpha_grad = alpha_grad / jnp.linalg.norm(alpha_grad) # normalized
-            alpha_norm = jnp.sum(alpha_grad * n_alpha_grad)
+            alpha_norm = jnp.sum(alpha_grad.T @ n_alpha_grad)
 
             # bls loop
             bls_state = (False, 0, bls_lr, alpha, alpha_norm, n_alpha_grad, loss, lambda_sg_constraint, lambda_jl_constraint)

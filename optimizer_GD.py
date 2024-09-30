@@ -12,33 +12,35 @@ jax.config.update('jax_platform_name', 'cpu')
 np.set_printoptions(precision=4)
 
 class GradientDescentOptimizer:
-    def __init__(self, earlyStopping, jitLoop, dualOptimization):
-        
-        self.max_iteration = 200
+    def __init__(self, args):
 
-        self.max_inner_iteration = 200
-        self.max_outer_iteration = 5
+        self.jitLoop = args.jit_loop
+        self.dualOptimization = args.max_outer_iteration > 1
 
-        self.earlyStopping = earlyStopping
-        self.jitLoop = jitLoop
-        self.dualOptimization = dualOptimization
+        self.max_inner_iteration = args.max_inner_iteration
+        self.max_outer_iteration = args.max_outer_iteration
 
-        self.lambda_constraint_increase = 10
+        self.loop_loss_reduction = args.loop_loss_reduction
 
-        self.lr = 2e-3
-        self.dual_lr = [2e-3, 1e-4, 1e-5, 1e-5, 1e-5]
+        self.lambda_constraint_increase = args.lambda_constraint_increase
+        self.lambda_sg_constraint = args.lambda_sg_constraint
+        self.lambda_jl_constraint = args.lambda_jl_constraint
 
-        self.loop_loss_reduction = 1e-3
-        self.dual_loop_loss_reduction = [1e-3, 1e-4, 1e-4, 1e-4, 1e-4]
+        self.lambda_max_cost = args.lambda_max_cost
+        self.lambda_reg = args.lambda_reg
 
-        self.lambda_reg = 1e-4
-        self.lambda_sg_constraint = 0.5
-        self.lambda_jl_constraint = 0.2
-        self.lambda_max_cost = 0.5
+        self.lr = args.gd_lr
+        self.dual_lr = args.gd_dual_lr
+
+        if self.max_outer_iteration != len(self.dual_lr):
+            print("FATAL: max_outer_iteration and dual_lr do not match")
+            exit(-1)
+
+        self.loop_loss_reduction = args.loop_loss_reduction
 
         self.env = Environment()
-        self.trajectory = Trajectory()
-
+        self.trajectory = Trajectory(args)
+        
         # compile loss and gradient function
         t1 = time.time()
         self.optimize()
@@ -48,10 +50,10 @@ class GradientDescentOptimizer:
 
     def optimize(self):
         init_alpha = self.trajectory.initTrajectory(self.env.start_config, self.env.goal_config)
-        if self.jitLoop:
-            return self.jit_optimize(init_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config)
-        elif self.dualOptimization:
+        if self.dualOptimization:
             return self.dual_optimize(init_alpha)
+        elif self.jit_optimize:
+            return self.jit_optimize(init_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config)
         else:
             return self.plain_optimize(init_alpha)
 
@@ -85,37 +87,30 @@ class GradientDescentOptimizer:
             alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
             return alpha
         
-        if self.earlyStopping:
-            alpha, _ = jax.lax.fori_loop(0, self.max_iteration, body_fun_early_stopping, (alpha, 1000))
-        else:
-            alpha = jax.lax.fori_loop(0, self.max_iteration, body_fun, alpha)
+        alpha, _ = jax.lax.fori_loop(0, self.max_inner_iteration, body_fun_early_stopping, (alpha, 1000))
+        
 
         return alpha
         
 
     def plain_optimize(self, alpha):
 
-        if self.earlyStopping:
-            last_loss = self.trajectory.compute_trajectory_cost(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
-            for iter in range(self.max_iteration):
-                alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
+        last_loss = self.trajectory.compute_trajectory_cost(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
+        for iter in range(self.max_inner_iteration):
+            alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
 
-                new_alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
-                
-                loss = self.trajectory.compute_trajectory_cost(new_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
+            new_alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
+            
+            loss = self.trajectory.compute_trajectory_cost(new_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
 
-                if last_loss - loss < self.loop_loss_reduction:
-                    print("break after", iter, "iteration")
-                    break
-                else:
-                    #print(iter, loss.item())
-                    last_loss = loss
+            if last_loss - loss < self.loop_loss_reduction:
+                print("break after", iter, "iteration")
+                break
+            else:
+                #print(iter, loss.item())
+                last_loss = loss
 
-                alpha = new_alpha
-        else:
-            for iter in range(self.max_iteration):
-                alpha_grad = self.trajectory.compute_trajectory_cost_g(alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, self.lambda_sg_constraint, self.lambda_jl_constraint, self.lambda_max_cost)
-                alpha = (1 - self.lambda_reg * self.lr) * alpha - self.lr * alpha_grad
+            alpha = new_alpha
                 
         return alpha
     
@@ -137,7 +132,7 @@ class GradientDescentOptimizer:
                 loss = self.trajectory.compute_trajectory_cost(new_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config, lambda_sg_constraint, lambda_jl_constraint, self.lambda_max_cost)
 
                 # end of current inner minimzation
-                if last_loss - loss < self.dual_loop_loss_reduction[outer_iter]:
+                if last_loss - loss < self.loop_loss_reduction:
                     #print("end of inner loop minimzation too small loss change", last_loss, loss.item())
                     last_loss = loss
                     break

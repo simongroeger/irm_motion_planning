@@ -10,16 +10,20 @@ from functools import partial
 from environment import Environment
 
 class Robot:
-    def __init__(self):   
-        self.max_joint_velocity = 5
-        self.min_joint_position = -1
-        self.max_joint_position = 2
+    def __init__(self, args):   
+        self.max_joint_velocity = args.max_joint_velocity
+        self.min_joint_position = args.min_joint_position
+        self.max_joint_position = args.max_joint_position
 
-        self.N_joints = 3
-        self.link_length = jnp.array([1.5, 1.0, 0.5])
+        self.N_joints = args.n_joints
+        self.link_length = jnp.array(args.link_length)
 
-        self.eps_velocity = 0.01
-        self.eps_distance = 0.01
+        if self.N_joints != len(self.link_length):
+            print("FATAL: n_joints and link_length do not match")
+            exit(-1)
+
+        self.eps_velocity = args.eps_velocity
+        self.eps_distance = args.eps_position
 
             
     @partial(jax.jit, static_argnames=['self'])

@@ -1,5 +1,7 @@
 import numpy as np
 import time
+import argparse
+
 import matplotlib.pyplot as plt
 from math import atan2, sin, cos, sqrt
 
@@ -17,6 +19,29 @@ import environment
 from environment import Environment
 from robot import Robot
 from trajectory import Trajectory
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    # trajectory
+    parser.add_argument('--n-timesteps', type=float, default=50)
+    parser.add_argument('--rbf-variance', type=float, default=0.1)
+    parser.add_argument('--jac-gaussian-mean', type=float, default=0.2)
+    parser.add_argument('--constraint-violating-dependant-loss', default=True)
+    parser.add_argument('--joint-safety-limit', type=float, default=0.98)
+
+    # robot
+    parser.add_argument('--n-joints', type=int, default=3)
+    parser.add_argument('--link-length', type=float, nargs='+', default=[1.5, 1.0, 0.5])
+    parser.add_argument('--max-joint-velocity', type=float, default=5)
+    parser.add_argument('--max-joint-position', type=float, default=2)
+    parser.add_argument('--min-joint-position', type=float, default=-1)
+    
+    parser.add_argument('--eps-position', type=float, default=0.01)
+    parser.add_argument('--eps-velocity', type=float, default=0.01)
+
+    args = parser.parse_args()
+    return args
 
 
 def compute_point_obstacle_cost(x, y, env):
@@ -55,13 +80,13 @@ def plot_loss_contour(fig, axs, env):
     
     fig.tight_layout()
 
-
-tr = Trajectory()
-robot = Robot()
+args = parse_args()
+tr = Trajectory(args)
+robot = Robot(args)
 env = Environment()
 #env.start_config = jnp.array([0.0, 0.5, -1.0])
 
-trajectory = np.loadtxt("bls_trajectory_result.txt")
+trajectory = np.loadtxt("trajectory_result.txt")
 N_timesteps = len(trajectory)
     
 fig, ((ax0, ax2, ax4), (ax1, ax5, ax3)) = plt.subplots(nrows=2, ncols=3)
@@ -79,12 +104,9 @@ ax0.plot(goal_cart[0], goal_cart[1], 'o', color="gold", label="goal_config")
 ax2.plot(goal_cart[0], goal_cart[1], 'o', color="gold", label="goal_config")
 
 t = jnp.linspace(0, 1, N_timesteps)
-c = 3 * t**2 - 2 * t**3
-straight_line = jnp.stack((
-    env.start_config[0] + (env.goal_config[0] - env.start_config[0]) * c,
-    env.start_config[1] + (env.goal_config[1] - env.start_config[1]) * c,
-    env.start_config[2] + (env.goal_config[2] - env.start_config[2]) * c
-)).T
+c = 6 * t**5 - 15 * t**4 + 10 * t**3
+straight_line = env.start_config + (env.goal_config - env.start_config) * c[:, jnp.newaxis]
+
 
 cartesian_data = robot.fk(straight_line)
 ax0.plot(cartesian_data[0], cartesian_data[1], '-', c='tab:gray', label="initial straight line trajectory")

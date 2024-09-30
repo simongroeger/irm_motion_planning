@@ -20,23 +20,26 @@ def d_rbf_kernel(x_1, x_2, rbf_var):
 
 
 class Trajectory:
-    def __init__(self):   
-        self.robot = Robot()
+    def __init__(self, args):   
+        self.robot = Robot(args)
 
-        self.N_timesteps = 50
+        self.rbf_var = args.rbf_variance
 
-        self.rbf_var = 0.1
-
-        self.constraint_violating_dependant_loss = True
-        self.joint_safety_limit = 0.98
+        self.constraint_violating_dependant_loss = args.constraint_violating_dependant_loss
+        self.joint_safety_limit = args.joint_safety_limit
 
         self.mean_joint_position = 0.5*(self.robot.max_joint_position + self.robot.min_joint_position)
         self.std_joint_position = self.robot.max_joint_position - self.mean_joint_position
 
+        self.N_timesteps = args.n_timesteps
         self.t = jnp.linspace(0, 1, self.N_timesteps)
+
+        # function s.t. c(0)=0, c(1)=1, c'(0)=0, c'(1)=0, c''(0)=0, c''(1)=0
+        self.c = 6 * self.t**5 - 15 * self.t**4 + 10 * self.t**3
+
         self.km = self.create_kernel_matrix(rbf_kernel, self.t, self.t)
         self.dkm = self.create_kernel_matrix(d_rbf_kernel, self.t, self.t)
-        self.jac = jnp.eye(3) + 0.2 * jax.random.normal(jax.random.PRNGKey(0), (3,3))
+        self.jac = jnp.eye(3) + args.jac_gaussian_mean * jax.random.normal(jax.random.PRNGKey(0), (3,3))
 
 
     def create_kernel_matrix(self, kernel_f, x, x2):
@@ -69,15 +72,8 @@ class Trajectory:
 
     @partial(jax.jit, static_argnames=['self'])
     def initTrajectory(self, start_config, goal_config):
-        c = 6 * self.t**5 - 15 * self.t**4 + 10*self.t**3
-
-        straight_line = jnp.stack((
-            start_config[0] + (goal_config[0] - start_config[0]) * c,
-            start_config[1] + (goal_config[1] - start_config[1]) * c,
-            start_config[2] + (goal_config[2] - start_config[2]) * c
-        )).T
-
-        #fit_trajectory_to_straigth_line 
+        # define straigh_line and fit_trajectory  
+        straight_line = start_config + (goal_config - start_config) * self.c[:, jnp.newaxis]
         alpha = jnp.linalg.solve(self.km, straight_line @ jnp.linalg.inv(self.jac))
         return alpha
         
