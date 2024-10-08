@@ -12,7 +12,7 @@ class Environment:
     def __init__(self):   
         
         self.start_config = jnp.array([0.0, 0.0, 0.0])
-        self.goal_config = jnp.array([1.2, 1.0, 0.3])
+        self.goal_config = jnp.array([1.2, 0.8, 0.3])
 
         self.obstacles = jnp.array([     
                                 [ 2, -3],

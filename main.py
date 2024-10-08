@@ -41,7 +41,7 @@ def parse_args():
     parser.add_argument('--eps-velocity', type=float, default=0.01)
 
     # loss function
-    parser.add_argument('--lambda-max-cost', type=float, default=0.8)
+    parser.add_argument('--lambda-max-cost', type=float, default=0.5)
     parser.add_argument('--lambda-reg', type=float, default=1e-4)
     parser.add_argument('--constraint-violating-dependant-loss', type=lambda x: (str(x).lower() == 'true'), default=True)
     parser.add_argument('--joint-safety-limit', type=float, default=0.98)
@@ -59,8 +59,8 @@ def parse_args():
 
     # robot
     parser.add_argument('--n-joints', type=int, default=3)
-    parser.add_argument('--link-length', type=float, nargs='+', default=[1.5, 0.5, 1.0])
-    parser.add_argument('--max-joint-velocity', type=float, default=5)
+    parser.add_argument('--link-length', type=float, nargs='+', default=[1.5, 1.0, 0.5])
+    parser.add_argument('--max-joint-velocity', type=float, default=8)
     parser.add_argument('--max-joint-position', type=float, default=2)
     parser.add_argument('--min-joint-position', type=float, default=-1)
 

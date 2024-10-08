@@ -15,6 +15,8 @@ from matplotlib.animation import FuncAnimation
 import sys
 sys.path.insert(0, '..')
 
+np.set_printoptions(precision=4)
+
 import environment
 from environment import Environment
 from robot import Robot
@@ -27,7 +29,7 @@ def parse_args():
     parser.add_argument('--n-timesteps', type=float, default=50)
     parser.add_argument('--rbf-variance', type=float, default=0.1)
     parser.add_argument('--jac-gaussian-mean', type=float, default=0.2)
-    parser.add_argument('--constraint-violating-dependant-loss', default=True)
+    parser.add_argument('--constraint-violating-dependant-loss', type=lambda x: (str(x).lower() == 'true'), default=True)
     parser.add_argument('--joint-safety-limit', type=float, default=0.98)
 
     # robot
@@ -130,7 +132,13 @@ fin_movement = np.zeros((4, 2, N_timesteps))
 fin_movement[1] = robot.fk_joint_1(trajectory)
 fin_movement[2] = robot.fk_joint_2(trajectory)
 fin_movement[3] = robot.fk_joint_3(trajectory)
-ax2.plot(fin_movement[:,0,0], fin_movement[:,1,0], '-', color = 'black', label="robot")
+ax2.plot(fin_movement[3,0], fin_movement[3,1], '-', c='black', label="final ee trajectory")
+
+for i in range(N_timesteps):
+    alpha = 1 if i in [0, N_timesteps-1] else 0.5
+    for j, color in enumerate(["blue", "orange", "darkgreen"]):
+        ax2.plot(fin_movement[j:j+2,0,i], fin_movement[j:j+2,1,i], color=color, linewidth=2, alpha=alpha)
+        #ax2.plot(fin_movement[:,0,i], fin_movement[:,1,i], 'o', color = 'tab:grey', alpha=alpha)
 
 
 # joint position
@@ -138,21 +146,21 @@ ax1.plot(t, straight_line[:, 0], '-', color='grey')
 ax1.plot(t, straight_line[:, 1], '-', color='grey')
 ax1.plot(t, straight_line[:, 2], '-', color='grey')
 
-ax1.plot(t, trajectory[:, 0], '-', color='grey')
-ax1.plot(t, trajectory[:, 1], '-', color='grey')
-ax1.plot(t, trajectory[:, 2], '-', color='grey')
+ax1.plot(t, trajectory[:, 0], '-', color='blue', label="joint 0")
+ax1.plot(t, trajectory[:, 1], '-', color='orange', label="joint 1")
+ax1.plot(t, trajectory[:, 2], '-', color='darkgreen', label="joint 2")
 
 # joint velocities 
 fd_joint_velocity = (trajectory[1:] - trajectory[:-1]) * N_timesteps
-ax5.plot(t[:-1], fd_joint_velocity[:, 0], '-', color='grey')
-ax5.plot(t[:-1], fd_joint_velocity[:, 1], '-', color='grey')
-ax5.plot(t[:-1], fd_joint_velocity[:, 2], '-', color='grey')
+ax5.plot(t[:-1], fd_joint_velocity[:, 0], '-', color='blue', label="joint 0")
+ax5.plot(t[:-1], fd_joint_velocity[:, 1], '-', color='orange', label="joint 1")
+ax5.plot(t[:-1], fd_joint_velocity[:, 2], '-', color='darkgreen', label="joint 2")
 
 ax0.legend(loc='lower left')
-ax2.legend(loc='lower left', title="final robot movement")
+ax2.legend(loc='lower left')
 ax4.legend(title="opt iter")
-ax1.legend(title="joint position")
-ax5.legend(title="joint velocity")
+ax1.legend(title="joint position", loc='upper left')
+ax5.legend(title="joint velocity", loc='upper left')
 ax3.legend(title="trajectory cost")
 
 plt.subplots_adjust(wspace=0.1, hspace=0.1)

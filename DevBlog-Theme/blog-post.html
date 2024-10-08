@@ -65,12 +65,12 @@ Actual content
 
 <header class="blog-post-header">
 	<h2 class="title mb-2">Motion Planning in RKHS</h2>
-	<div class="meta mb-3"><span class="date">Intelligent Robotic Manipulation Project Lab II</span><span class="date">April 24 - September 24</span><span class="date">Simon Gröger</span></div>
+	<div class="meta mb-3"><span class="date">Intelligent Robotic Manipulation Project Lab II</span><span class="date">April 24 - Oktober 24</span><span class="date">Simon Gröger</span></div>
 </header>
 			    
 <div class="blog-post-body">
 <figure class="blog-banner">
-	<img class="img-fluid" src="assets/images/Figure_2.png" alt="image">
+	<img class="img-fluid" src="assets/images/heading.png" alt="image">
 	<figcaption class="mt-2 text-center image-caption">Trajectory Optimization with a 3-link-robot</figcaption>
 </figure>
 
@@ -97,7 +97,9 @@ Actual content
 
 	The trajectory is defined in the reproducing kernel hilbert space and has a parameter matrix \(\alpha\), a Kernel matrix K and an additional matrix J. 
 	The kernel matrix uses the RBF kernel and the matrix J enables cross joint communticaion and optimization.
-	The trajectory can be evaluated to the jointposition for any timestep t using $$ evaluate(K, J, \alpha, t) = K(\cdot, t) \alpha J $$
+	The trajectory can be evaluated to the jointposition for any timestep t using \[ evaluate(K, J, \alpha, t) = K(\cdot, t) \alpha J \]
+	To evaluate the joint velocity we define an additional kernelmatrix dK with \( dK = {\partial \over \partial t} K \) , such that it holds:  \[ {\partial \over \partial t} evaluate(K, J, \alpha, t) = evaluate(dK, J, \alpha, t) \]
+	Thus the can faster evaluate the joint velocity without having to take a derivative each time.
 	During the trajectory optimzation a finite set of supporting points \( t_i \) for \( i \in \{1,...,n_{support}\} \) are used.
 
 	
@@ -113,15 +115,15 @@ Actual content
 
 	Therefore the constraint optimization problem formulation is the following:
 
-	\[ \min_{\alpha} L(\alpha) = \sum_{i=1}^{n_{support}} \sum_{j=1}^{n_{joints}} costmap( fk_j(evaluate(K, J, \alpha, t_i) ) + \lambda_{reg} || evaluate(K, J, \alpha, \cdot) ||^2 \]
+	\[ \min_{\alpha} L(\alpha) = \sum_{i=1}^{n_{support}} costmap( fk(evaluate(K, J, \alpha, t_i) ) + { \lambda_{reg}  \over 2 } || evaluate(K, J, \alpha, \cdot) ||^2_2 \]
 	s.t. 
-	\[ || evaluate(K, J, \alpha, t_1)  - config_{start} || \le \epsilon_{position}  \]
-	\[ || evaluate(K, J, \alpha, t_{n_{support}}) - config_{goal} || \le \epsilon_{position}  \]
-	\[ || {\partial \over \partial t} evaluate(K, J, \alpha, t) || \le \epsilon_{velocity}  \]
-	\[ || {\partial \over \partial t} evaluate(K, J, \alpha, t_{n_{support}}) || \le \epsilon_{velocity}  \]
+	\[ { 1 \over 2 } || evaluate(K, J, \alpha, t_1)  - config_{start} ||^2_2 \le \epsilon_{position}  \]
+	\[ { 1 \over 2 } || evaluate(K, J, \alpha, t_{n_{support}}) - config_{goal} ||^2_2 \le \epsilon_{position}  \]
+	\[ { 1 \over 2 } || evaluate(dK, J, \alpha, t_1) ||^2_2 \le \epsilon_{velocity}  \]
+	\[ { 1 \over 2 } || evaluate(dK, J, \alpha, t_{n_{support}}) ||^2_2 \le \epsilon_{velocity}  \]
 	\[ \forall i \in \{1,...,n_{support}\} : evaluate(K, J, \alpha, t_i) \le jointposition_{max}  \]
 	\[ \forall i \in \{1,...,n_{support}\} : evaluate(K, J, \alpha, t_i) \ge jointposition_{min}  \]
-	\[ \forall i \in \{1,...,n_{support}\} : | {\partial \over \partial t}  evaluate(K, J, \alpha, t_i) | \le jointvelocity_{max}  \]
+	\[ \forall i \in \{1,...,n_{support}\} : | evaluate(dK, J, \alpha, t_i) | \le jointvelocity_{max}  \]
 
  
 </p>
@@ -133,9 +135,13 @@ During optimization the constraint loss is transformed to a Lagragian formulatio
 In the optimization process the obstacle loss is adjusted to overcome local optima and improve convergence.
 The used obstacle loss combines the average and the maximum trajectory loss for the supporting points with a hyperparameter \( \lambda_{cost} \) and is defined as follows:
 
+\[
+ObstacleLoss_{t_i}(\alpha) = costmap( fk(evaluate(K, J, \alpha, t_i) )
+\]
+
 \[ ObstacleLoss(\alpha) = 
-         \lambda_{cost} \max_{i=1}^{n_{support}} \sum_{j=1}^{n_{joints}} costmap( fk_j(evaluate(K, J, \alpha, t_i) )
-  + (1 - \lambda_{cost}) {1 \over n_{support}} \sum_{i=1}^{n_{support}} \sum_{j=1}^{n_{joints}} costmap( fk_j(evaluate(K, J, \alpha, t_i) ) \]
+         \lambda_{cost} \max_{i=1}^{n_{support}} ObstacleLoss_{t_i}(\alpha)
+  + (1 - \lambda_{cost}) {1 \over n_{support}} \sum_{i=1}^{n_{support}} ObstacleLoss_{t_i}(\alpha) \]
 
 
 
@@ -171,6 +177,27 @@ while not constraint_fulfilled(alpha, K, dK, J) or n_outer==0 do
 
 <p> Current Environment explanation</p>
 
+<figure class="blog-banner">
+	<img class="img-fluid" src="assets/images/obstacles_costmap.png" alt="image">
+	<figcaption class="mt-2 text-center image-caption">Obstacles of our environment with resulting costmapand the robots start and goal configuration</figcaption>
+</figure>
+
+<figure class="blog-banner">
+	<img class="img-fluid" src="assets/images/gradientfield.png" alt="image">
+	<figcaption class="mt-2 text-center image-caption">Gradient Field of the Costmap</figcaption>
+</figure>
+
+
+<h5 class="mt-5 mb-3">Complete Robot Obstacle Avoidance</h5>
+
+<p> 
+	Depending on the application not only the end-effector but the whole robot is placed in an environment with obstacles which are to avoid. 
+	In this case the cost fuction can be easily adjusted to minimize the cost at the position of all joints:
+	\[ ObstacleLoss_{t_i}(\alpha) = \sum_{j=1}^{n_{joints}} costmap( fk_j(evaluate(K, J, \alpha, t_i) ) \]
+	with \(fk_j\) being the forward kinematic for the joint \(j\) .
+
+	
+</p>
 
 <p> Videos</p>
 

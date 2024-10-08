@@ -69,7 +69,7 @@ class Robot:
         pos_x = ll @ jnp.cos(c).T
         pos_y = ll @ jnp.sin(c).T
         pos = jnp.stack((pos_x, pos_y))
-        return pos[0, 0]
+        return pos
 
 
     @partial(jax.jit, static_argnames=['self'])
