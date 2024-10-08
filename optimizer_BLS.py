@@ -167,17 +167,17 @@ class BacktrackingLineSearchOptimizer:
         
             inner_state = jax.lax.cond(loss - new_loss < self.loop_loss_reduction, inner_break, inner_more, None)
             return inner_state
-        
+    
 
 
         @partial(jax.jit, static_argnames=[])
-        def outer_cond_fun(state):
-            constraint_fulfilled, outer_iter, _, _, _ = state
+        def outer_cond_fun(outer_state):
+            constraint_fulfilled, outer_iter, _, _, _ = outer_state
             return (outer_iter < self.max_outer_iteration) & (~constraint_fulfilled)
 
         @partial(jax.jit, static_argnames=[])
-        def outer_body_fun(state):
-            constraint_fulfilled, outer_iter, alpha, lambda_sg_constraint, lambda_jl_constraint = state
+        def outer_body_fun(outer_state):
+            constraint_fulfilled, outer_iter, alpha, lambda_sg_constraint, lambda_jl_constraint = outer_state
 
             # Inner loop
             inner_state = (False, 0, alpha, self.bls_lr_start, lambda_sg_constraint, lambda_jl_constraint)
@@ -192,12 +192,12 @@ class BacktrackingLineSearchOptimizer:
                 return False, outer_iter + 1, alpha, lambda_sg_constraint * self.lambda_constraint_increase, lambda_jl_constraint * self.lambda_constraint_increase
 
             # Use lax.cond to determine the next state
-            state = jax.lax.cond(constraint_fulfilled, break_fn, continue_fn, None)
-
-            return state
+            outer_state = jax.lax.cond(constraint_fulfilled, break_fn, continue_fn, None)
+            return outer_state
 
 
         # Outer loop using jax.lax.while_loop
-        constraint_fulfilled, outer_iter, alpha, _, _, = jax.lax.while_loop(outer_cond_fun, outer_body_fun, (False, 0, alpha, self.lambda_sg_constraint, self.lambda_jl_constraint))
+        outer_state =  (False, 0, alpha, self.lambda_sg_constraint, self.lambda_jl_constraint)
+        constraint_fulfilled, outer_iter, alpha, _, _, = jax.lax.while_loop(outer_cond_fun, outer_body_fun, outer_state)
 
         return alpha
