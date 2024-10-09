@@ -101,6 +101,8 @@ def main():
     print("result cost: ( avg", avg_result_cost, ", max", max_result_cost, "). constraint fulfiled", optimizer.trajectory.constraintsFulfilledVerbose(result_alpha, optimizer.env.start_config, optimizer.env.goal_config, verbose=True))
 
     np_trajectory = np.array(optimizer.trajectory.evaluate(result_alpha, optimizer.trajectory.km, optimizer.trajectory.jac))
+    #print(args.lambda_max_cost)
+    #np.savetxt("trajectory_result_" + str(args.lambda_max_cost) + ".txt", np_trajectory)
     np.savetxt("trajectory_result.txt", np_trajectory)
 
 if __name__ == "__main__":

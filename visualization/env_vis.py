@@ -42,13 +42,14 @@ def parse_args():
     parser.add_argument('--eps-position', type=float, default=0.01)
     parser.add_argument('--eps-velocity', type=float, default=0.01)
 
-    parser.add_argument('--vis-sgb', type=lambda x: (str(x).lower() == 'true'), default=True)
-    parser.add_argument('--vis-sg-robot', type=lambda x: (str(x).lower() == 'true'), default=True)
-    parser.add_argument('--vis-obstacles', type=lambda x: (str(x).lower() == 'true'), default=True)
-    parser.add_argument('--vis-straight-line', type=lambda x: (str(x).lower() == 'true'), default=False)
-    parser.add_argument('--vis-gradient', type=lambda x: (str(x).lower() == 'true'), default=False)
-    parser.add_argument('--vis-final-ee', type=lambda x: (str(x).lower() == 'true'), default=False)
-    parser.add_argument('--vis-final-robot', type=lambda x: (str(x).lower() == 'true'), default=False)
+    parser.add_argument('--vis-legend', type=lambda x: (str(x).lower() == 'true'),             default=True)
+    parser.add_argument('--vis-sgb', type=lambda x: (str(x).lower() == 'true'),             default=True)
+    parser.add_argument('--vis-sg-robot', type=lambda x: (str(x).lower() == 'true'),        default=True)
+    parser.add_argument('--vis-obstacles', type=lambda x: (str(x).lower() == 'true'),       default=False)
+    parser.add_argument('--vis-straight-line', type=lambda x: (str(x).lower() == 'true'),   default=True)
+    parser.add_argument('--vis-gradient', type=lambda x: (str(x).lower() == 'true'),        default=False)
+    parser.add_argument('--vis-final-ee', type=lambda x: (str(x).lower() == 'true'),        default=True)
+    parser.add_argument('--vis-final-robot', type=lambda x: (str(x).lower() == 'true'),     default=False)
 
 
     args = parser.parse_args()
@@ -124,9 +125,6 @@ robot = Robot(args)
 env = Environment()
 #env.start_config = jnp.array([0.0, 0.5, -1.0])
 
-trajectory = np.loadtxt("trajectory_result.txt")
-N_timesteps = len(trajectory)
-    
 fig, (ax0) = plt.subplots(nrows=1, ncols=1)
 
 # Plot 2d workspace cost potential
@@ -136,21 +134,38 @@ if args.vis_gradient:
     plot_gradient(fig, [ax0], env)
 
 if args.vis_obstacles:
-    ax0.scatter(env.obstacles[:, 0], env.obstacles[:, 1], 100, color="black", label="obstacles")
-    ax0.scatter(env.obstacles[:, 0], env.obstacles[:, 1], 50, color="red", label="obstacles")
+    ax0.scatter(env.obstacles[:, 0], env.obstacles[:, 1], 2000, color="red", linewidths=5, edgecolors="black", label="obstacles")
 
 if args.vis_sgb:
     #plot start and goal
     start_cart = robot.fk(env.start_config)
-    ax0.plot(start_cart[0], start_cart[1], 'o', color="yellow", label="start_config")
+    ax0.scatter(start_cart[0], start_cart[1], 100, color="yellow", linewidths=0.5, edgecolors="black", label="start_config")
 
     goal_cart = robot.fk(env.goal_config)
-    ax0.plot(goal_cart[0], goal_cart[1], 'o', color="gold", label="goal_config")
+    ax0.scatter(goal_cart[0], goal_cart[1], 100, color="gold", linewidths=0.5, edgecolors="black", label="goal_config")
 
     #plot robot base
-    ax0.plot([0], [0], 'o', color="black", label="joint 0")
+    ax0.scatter([0], [0], 50, color="black")
+
+if args.vis_sg_robot:
+    sg_trajectory = jnp.array([env.start_config, env.goal_config])
+    fin_movement = np.zeros((4, 2, 2))
+    fin_movement[1] = robot.fk_joint_1(sg_trajectory)
+    fin_movement[2] = robot.fk_joint_2(sg_trajectory)
+    fin_movement[3] = robot.fk_joint_3(sg_trajectory)
+    ax0.plot(fin_movement[:,0, 0], fin_movement[:,1, 0], linewidth=3, c='black')
+    ax0.plot(fin_movement[:,0, 1], fin_movement[:,1, 1], linewidth=3, c='black')
 
 
+trajectories = []
+trajectories.append(np.loadtxt("trajectory_result.txt"))
+
+#trajectory_labels=["0.0", "0.25", "0.5", "0.75", "1.0"]
+#for label in trajectory_labels:
+#    trajectories.append(np.loadtxt("trajectory_result_" + label + ".txt"))
+
+N_timesteps = len(trajectories[0])
+    
 t = jnp.linspace(0, 1, N_timesteps)
 c = 6 * t**5 - 15 * t**4 + 10 * t**3
 straight_line = env.start_config + (env.goal_config - env.start_config) * c[:, jnp.newaxis]
@@ -160,27 +175,26 @@ if args.vis_straight_line:
 
 
 # final robot movement
-fin_movement = np.zeros((4, 2, N_timesteps))
-fin_movement[1] = robot.fk_joint_1(trajectory)
-fin_movement[2] = robot.fk_joint_2(trajectory)
-fin_movement[3] = robot.fk_joint_3(trajectory)
+for i, trajectory in enumerate(trajectories):
+    fin_movement = np.zeros((4, 2, N_timesteps))
+    fin_movement[1] = robot.fk_joint_1(trajectory)
+    fin_movement[2] = robot.fk_joint_2(trajectory)
+    fin_movement[3] = robot.fk_joint_3(trajectory)
 
-if args.vis_sg_robot:
-    ax0.plot(fin_movement[:,0, 0], fin_movement[:,1, 0], '-', c='black', label="robot start config")
-    ax0.plot(fin_movement[:,0, N_timesteps-1], fin_movement[:,1, N_timesteps-1], linewidth=2, c='black', label="robot goal config")
-
-
-if args.vis_final_ee:
-    ax0.plot(fin_movement[3,0], fin_movement[3,1], '-', c='black', label="final ee trajectory")
-
-if args.vis_final_robot:
-    for i in range(N_timesteps):
-        alpha = 1 if i in [0, N_timesteps-1] else 0.5
-        for j, color in enumerate(["blue", "orange", "darkgreen"]):
-            ax0.plot(fin_movement[j:j+2,0,i], fin_movement[j:j+2,1,i], color=color, linewidth=2, alpha=alpha)
-            #ax0.plot(fin_movement[:,0,i], fin_movement[:,1,i], 'o', color = 'tab:grey', alpha=alpha)
+    if args.vis_final_ee:
+        ax0.plot(fin_movement[3,0], fin_movement[3,1], '-', c='black', label="final ee trajectory")
+        #ax0.plot(fin_movement[3,0], fin_movement[3,1], '-', linewidth=2, label="trajectory_"+ trajectory_labels[i])
 
 
+    if args.vis_final_robot:
+        for i in range(N_timesteps):
+            alpha = 1 if i in [0, N_timesteps-1] else 0.5
+            for j, color in enumerate(["blue", "orange", "darkgreen"]):
+                ax0.plot(fin_movement[j:j+2,0,i], fin_movement[j:j+2,1,i], color=color, linewidth=2, alpha=alpha)
+                #ax0.plot(fin_movement[:,0,i], fin_movement[:,1,i], 'o', color = 'tab:grey', alpha=alpha)
+
+if args.vis_legend:
+    ax0.legend()
 
 plt.subplots_adjust(wspace=0.1, hspace=0.1)
 plt.show()

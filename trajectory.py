@@ -29,7 +29,7 @@ class Trajectory:
         self.joint_safety_limit = args.joint_safety_limit
 
         self.mean_joint_position = 0.5*(self.robot.max_joint_position + self.robot.min_joint_position)
-        self.std_joint_position = self.robot.max_joint_position - self.mean_joint_position
+        self.std_joint_position = 0.5 * (self.robot.max_joint_position - self.mean_joint_position)
 
         self.N_timesteps = args.n_timesteps
         self.t = jnp.linspace(0, 1, self.N_timesteps)

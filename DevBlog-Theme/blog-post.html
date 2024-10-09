@@ -74,18 +74,18 @@ Actual content
 	<figcaption class="mt-2 text-center image-caption">Trajectory Optimization with a 3-link-robot</figcaption>
 </figure>
 
-
-<p> 
-	In this project the goal is a fast motion planning approach using the Reproducing Kernel Hilbert Space. 
-	This approach may lead to better results as the problem formulation has fewer local optima.
-	
+<p></p>
+In this project the goal is a fast motion planning approach using the Reproducing Kernel Hilbert Space. 
+This approach may lead to better results as the problem formulation has fewer local optima.
 </p>
 
 <h3 class="mt-5 mb-3">Introduction</h3>
 
 <p>
-
 	In motion planning trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS). The Trajectory is intialized in a straight line from start to goal configuration and then the cost of the trajectory is minimized using functional gradient descent thus avoiding the obstacles
+	In motion planning trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS). The Trajectory is intialized in a straight line from start to goal configuration and then the cost of the trajectory is minimized using functional gradient descent thus avoiding the obstacles
+
+In motion planning trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS). The Trajectory is intialized in a straight line from start to goal configuration and then the cost of the trajectory is minimized using functional gradient descent thus avoiding the obstacles
 
 </p>
 
@@ -101,60 +101,120 @@ Actual content
 	To evaluate the joint velocity we define an additional kernelmatrix dK with \( dK = {\partial \over \partial t} K \) , such that it holds:  \[ {\partial \over \partial t} evaluate(K, J, \alpha, t) = evaluate(dK, J, \alpha, t) \]
 	Thus the can faster evaluate the joint velocity without having to take a derivative each time.
 	During the trajectory optimzation a finite set of supporting points \( t_i \) for \( i \in \{1,...,n_{support}\} \) are used.
+</p>	
 
-	
 
+<h4 class="mt-3 mb-3">Trajectory Initialization</h4>
+
+<p> 
+We start the trajecotry initialization by computing \( n_{support} \) supporting timesteps \( t_i \) between 0 and 1, which are usually equally distanced.
+The Kernel matrix K and dK are initialized with
+\[
+K[i, j] = \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
+\]
+and 
+\[
+dK[i, j] = \frac{(t_i - t_j)}{\text{rbf_var}^2} \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
+\]
+with the variance rbf_var.
+The matrix J is initialized as the addition of the identity matrix and random gaussian noise. The magnitude of the gaussian noise influences the cross joint communication and convergence speed. We achieved good robust results with a mean of 0.15.
 </p>
+
 
 <h4 class="mt-3 mb-3">Loss Formulation</h4>
 
-<p> 
+<p>
+The trajectory optimization problem has a constraint loss, with the loss of the trajectory in the cost map and multiple trajectory constraints.
+The trajectory constraints define the distance of the start and final configuration to the start and end of the trajectory. Also the joint position and velocity are limited to the respective max and min constraints.
 
-	The trajectory optimization problem has a constraint loss, with the loss of the trajectory in the cost map and multiple trajectory constraints.
-	The trajectory constraints define the distance of the start and final configuration to the start and end of the trajectory. Also the joint position and velocity are limited to the respective max and min constraints.
+Therefore the constraint optimization problem formulation is the following:
 
-	Therefore the constraint optimization problem formulation is the following:
-
-	\[ \min_{\alpha} L(\alpha) = \sum_{i=1}^{n_{support}} costmap( fk(evaluate(K, J, \alpha, t_i) ) + { \lambda_{reg}  \over 2 } || evaluate(K, J, \alpha, \cdot) ||^2_2 \]
-	s.t. 
-	\[ { 1 \over 2 } || evaluate(K, J, \alpha, t_1)  - config_{start} ||^2_2 \le \epsilon_{position}  \]
-	\[ { 1 \over 2 } || evaluate(K, J, \alpha, t_{n_{support}}) - config_{goal} ||^2_2 \le \epsilon_{position}  \]
-	\[ { 1 \over 2 } || evaluate(dK, J, \alpha, t_1) ||^2_2 \le \epsilon_{velocity}  \]
-	\[ { 1 \over 2 } || evaluate(dK, J, \alpha, t_{n_{support}}) ||^2_2 \le \epsilon_{velocity}  \]
-	\[ \forall i \in \{1,...,n_{support}\} : evaluate(K, J, \alpha, t_i) \le jointposition_{max}  \]
-	\[ \forall i \in \{1,...,n_{support}\} : evaluate(K, J, \alpha, t_i) \ge jointposition_{min}  \]
-	\[ \forall i \in \{1,...,n_{support}\} : | evaluate(dK, J, \alpha, t_i) | \le jointvelocity_{max}  \]
-
- 
+\[ \min_{\alpha} L(\alpha) = \sum_{i=1}^{n_{support}} costmap( fk(evaluate(K, J, \alpha, t_i) ) + { \lambda_{reg}  \over 2 } || evaluate(K, J, \alpha, \cdot) ||^2_2 \]
+s.t. 
+\[ { 1 \over 2 } || evaluate(K, J, \alpha, t_1)  - config_{start} ||^2_2 \le \epsilon_{position} \]
+\[ { 1 \over 2 } || evaluate(K, J, \alpha, t_{n_{support}}) - config_{goal} ||^2_2 \le \epsilon_{position}  \]
+\[ { 1 \over 2 } || evaluate(dK, J, \alpha, t_1) ||^2_2 \le \epsilon_{velocity}  \]
+\[ { 1 \over 2 } || evaluate(dK, J, \alpha, t_{n_{support}}) ||^2_2 \le \epsilon_{velocity}  \]
+\[ \forall i \in \{1,...,n_{support}\} : evaluate(K, J, \alpha, t_i) \le jointposition_{max}  \]
+\[ \forall i \in \{1,...,n_{support}\} : evaluate(K, J, \alpha, t_i) \ge jointposition_{min}  \]
+\[ \forall i \in \{1,...,n_{support}\} : | evaluate(dK, J, \alpha, t_i) | \le jointvelocity_{max}  \]
 </p>
+ 
 
 <h4 class="mt-3 mb-3">Constraint Gradient update</h4>
 
-During optimization the constraint loss is transformed to a Lagragian formulation and optimized using the Squared Penalty Method with increasing the  lagragian multiplier by an order of magnitude when the current loss was minimized.
+<p>
+During optimization the constraint loss is transformed to a Lagragian formulation and optimized using the Squared Penalty Method. This method increases the lagragian multiplier by an order of magnitude when the current loss was minimized until all constraints are satified.
+</p>
 
+<p>
+The Constraint Loss Formulaton is defined as
+
+\[
+\min_{\alpha} L(\alpha) = ObstacleLoss(\alpha) + \lambda_{sg} StartGoalLoss(\alpha) 
+ + \lambda_{jl} JointLimitLoss(\alpha) + \lambda_{reg} || evaluate(K, J, \alpha, \cdot) ||^2_2   
+\]
+</p>
+
+<p>
+where the StartGoalLoss is defined as 
+\[
+StartGoalLoss(\alpha) = StartGoalPositionLoss(\alpha) + StartGoalVelocityLoss(\alpha)
+\]
+\[
+StartGoalPositionLoss(\alpha) = {1 \over 2 } || evaluate(K, J, \alpha, t_1)  - config_{start} ||^2_2 + {1 \over 2 } || evaluate(K, J, \alpha, t_{n_{support}}) - config_{goal} ||^2_2
+\]
+\[
+StartGoalVelocityLoss(\alpha) = {1 \over 2 } || evaluate(dK, J, \alpha, t_1) ||^2_2 + {1 \over 2 } || evaluate(dK, J, \alpha, t_{n_{support}}) ||^2_2
+\]
+</p>
+
+<p>
+Contrary to the StartGoalLoss, the JointLimitLoss is only applied if the limit is exceeded as thus is a bit more complicated
+\[
+JointLimitLoss(\alpha) = JointPositionLimitLoss(\alpha) + JointVelocityLimitLoss(\alpha)
+\]
+\[
+JointPositionLimitLoss(\alpha) = \sum_{i=1}^{n_{support}} \sum_{j=1}^{n_{joints}} \left[ JointPositionLimitViolated(\alpha, i, j) \right] \left({ evaluate(K, J, \alpha, t_i)[j] - mean\_joint\_position \over std\_joint\_position } \right)^2
+\]
+\[
+JointPositionLimitViolated(\alpha, i, j) = evaluate(K, J, \alpha, t_i)[j] \gt max\_joint\_position \vee evaluate(K, J, \alpha, t_i)[j] \lt min\_joint\_position 
+\]
+\[
+mean\_joint\_position = 0.5 * (max\_joint\_position + min\_joint\_position)
+\]
+\[
+std\_joint\_position = 0.5 * |max\_joint\_position - min\_joint\_position|
+\]
+
+\[
+JointVelocityLimitLoss(\alpha) = \sum_{i=1}^{n_{support}} \sum_{j=1}^{n_{joints}}  \left[ JointVelocityLimitViolated(\alpha, i, j) \right] \left({ evaluate(dK, J, \alpha, t_i)[j] | \over max\_joint\_velocity } \right)^2
+\]
+\[
+JointVelocityLimitViolated(\alpha, i, j) = |evaluate(dK, J, \alpha, t_i)[j] | \gt max\_joint\_velocity
+\]
+</p>
+
+<p>
 In the optimization process the obstacle loss is adjusted to overcome local optima and improve convergence.
-The used obstacle loss combines the average and the maximum trajectory loss for the supporting points with a hyperparameter \( \lambda_{cost} \) and is defined as follows:
+The used obstacle loss combines the average and the maximum trajectory loss for the supporting points with a hyperparameter \( \lambda_{max\_cost} \) and is defined as follows:
 
+\[ ObstacleLoss(\alpha) = 
+         \lambda_{max\_cost} \max_{i} ObstacleLoss_{t_i}(\alpha)
+  + (1 - \lambda_{max\_cost}) {1 \over n_{support}} \sum_{i=1}^{n_{support}} ObstacleLoss_{t_i}(\alpha)
+\]
 \[
 ObstacleLoss_{t_i}(\alpha) = costmap( fk(evaluate(K, J, \alpha, t_i) )
 \]
-
-\[ ObstacleLoss(\alpha) = 
-         \lambda_{cost} \max_{i=1}^{n_{support}} ObstacleLoss_{t_i}(\alpha)
-  + (1 - \lambda_{cost}) {1 \over n_{support}} \sum_{i=1}^{n_{support}} ObstacleLoss_{t_i}(\alpha) \]
-
-
-
-
-<p> 
-
 </p>
+
+
+
 
 <h4 class="mt-5 mb-3">Equation Derivation</h4>
 <h4 class="mt-5 mb-3">Algorithmic Pipeline Derivation</h4>
 <h5 class="mt-5 mb-3">Pseudocode with linenumbers</h5>
 
-<p> Ich bin ein Text. </p>
 
 <pre>
 <code>
@@ -175,12 +235,22 @@ while not constraint_fulfilled(alpha, K, dK, J) or n_outer==0 do
 
 <h3 class="mt-5 mb-3">Experiments</h3>
 
-<p> Current Environment explanation</p>
+<p>
+Our Environment is defined by a number of obstacles that need to be avoided and passed with maximal distance. We define a costmap with the 
+\[
+costfunction(x) = \sum_{i=1}^{n_{obstacles}} {0.8 \over 0.5 + 0.5 * ||x  - obstacle_i||^2_2 } 
+\]
+to get a convex optimization problem concerning a 2D point in the environment.
+</p>
 
 <figure class="blog-banner">
 	<img class="img-fluid" src="assets/images/obstacles_costmap.png" alt="image">
-	<figcaption class="mt-2 text-center image-caption">Obstacles of our environment with resulting costmapand the robots start and goal configuration</figcaption>
+	<figcaption class="mt-2 text-center image-caption">Obstacles of our environment with the resulting costmap and the robots start and goal configuration</figcaption>
 </figure>
+
+<p>
+From this costmap we can derive a gradient field to maximize the distance to the obstacles
+</p>
 
 <figure class="blog-banner">
 	<img class="img-fluid" src="assets/images/gradientfield.png" alt="image">
@@ -190,44 +260,60 @@ while not constraint_fulfilled(alpha, K, dK, J) or n_outer==0 do
 
 <h5 class="mt-5 mb-3">Complete Robot Obstacle Avoidance</h5>
 
-<p> 
-	Depending on the application not only the end-effector but the whole robot is placed in an environment with obstacles which are to avoid. 
-	In this case the cost fuction can be easily adjusted to minimize the cost at the position of all joints:
-	\[ ObstacleLoss_{t_i}(\alpha) = \sum_{j=1}^{n_{joints}} costmap( fk_j(evaluate(K, J, \alpha, t_i) ) \]
-	with \(fk_j\) being the forward kinematic for the joint \(j\) .
-
-	
+<p>
+Depending on the application not only the end-effector but the whole robot is placed in an environment with obstacles which are to avoid. 
+In this case the cost fuction can be easily adjusted to minimize the cost at the position of all joints:
+\[ 
+ObstacleLoss_{t_i}(\alpha) = \sum_{j=1}^{n_{joints}} costmap( fk_j(evaluate(K, J, \alpha, t_i) ) 
+\]
+with \(fk_j\) being the forward kinematic for the joint \(j\) .
 </p>
 
-<p> Videos</p>
 
-<p> Runtime for different problems, GD / BLSGD, joint constraints pytorch, jax Gradient descent, jax line search  </p>
+<h5 class="mt-5 mb-3">Lambda Max Cost</h5>
 
-<h5 class="mt-5 mb-3">Insights on failed ideas</h5>
+<p>
+In our loss formulation we introduced the trajectory obstacle cost as the weighted sum of the average obstacle cost and the maximum obstacle cost using \( \lambda_{max\_cost} \).
+\[ 
+	ObstacleLoss(\alpha) = 
+	\lambda_{max\_cost} \max_{i} ObstacleLoss_{t_i}(\alpha)
+	+ (1 - \lambda_{max\_cost}) {1 \over n_{support}} \sum_{i=1}^{n_{support}} ObstacleLoss_{t_i}(\alpha)
+\]
+The reason is that the optimization of the trajectory is not convex anymore as some cross-joint and cross-timestep communication is required for the trajectory to converge to a global optimum and not be stuck in a local optima.
+</p>
+<p>
+We assume the gradient of the part of the trajectory close to the obstacles is not big enough to overcome the local optima of the cost of the constraints and the smoothness cost, and thus the optimizer will find other ways to decrease the average trajectory cost without sufficiently increasing the distance to the nearest obstacles.
 
-<p> 
-	Reformulating the obstacle loss part and including the max part of the loss was very crucial as the model was else stuck in a local optima, seen in the following figure, and didnt converge to the optimal solution. Apparently the gradient of the part of the trajectory close to the obstacles is not big enough to overcome the cost of the constraints and the smoothness cost.
-
+In the following figure you can see the results of different \( \lambda_{max\_cost} \) values and you can see that the optimization without the max cost ( \( \lambda_{max\_cost} = 0 \) ) does not reach a sufficient optimization of the trajectory.
 </p>
 
 <figure class="blog-banner">
-	<img class="img-fluid" src="assets/images/Figure_nomax.png" alt="image">
-	<figcaption class="mt-2 text-center image-caption">Result of the Trajectory Optimization when not using the adjusted obstacle loss</figcaption>
+	<img class="img-fluid" src="assets/images/lambda_max_cost.png" alt="image">
+	<figcaption class="mt-2 text-center image-caption">Different Results for different \( \lambda_{max\_cost} \)</figcaption>
 </figure>
 
+<!-- 0.0  1.75 3.37  -->
+<!-- 0.25 1.64 2.19   -->
+<!-- 0.5  1.69 2.19   -->
+<!-- 0.75 1.73 2.19   -->
+<!-- 1.0  1.82 2.19   -->
+
+
+Videos
+
+Runtime for different problems, GD / BLSGD, joint constraints pytorch, jax Gradient descent, jax line search  
+
+<h5 class="mt-5 mb-3">Insights on failed ideas</h5>
+
 
 <p>
-	The original paper sugested using the Jacobian matrix in the trajectory formulation to enable joint optimization with communication across different joints influencing each other. In our experiments the optimization didnt work anymore if we included the actual Jacobian matrix as the magnitude of the entries was very different. Naturally the elements for the first joint are larger than those of the last joints, which makes any optimization very hard.
-	We therefore used a identity matrix and added N(0, 0.2) to the elements to enable random cross joint communication.
-</p>
-
-<p>
-
+The original paper sugested using the Jacobian matrix in the trajectory formulation to enable joint optimization with communication across different joints influencing each other. In our experiments the optimization didnt work anymore if we included the actual Jacobian matrix as the magnitude of the entries was very different. Naturally the elements for the first joint are larger than those of the last joints, which makes any optimization very hard.
+We therefore used a identity matrix and added N(0, 0.2) to the elements to enable random cross joint communication.
 </p>
 
 <h3 class="mt-5 mb-3">Conclusion</h3>
 
-<p> While a trajectory formulated in the RKHS is easier to optimize the approach is still very sensitive to the hyper parameters.  </p>
+While a trajectory formulated in the RKHS is easier to optimize the approach is still very sensitive to the hyper parameters.
 
 
 
