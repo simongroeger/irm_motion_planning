@@ -42,6 +42,16 @@
 					<div class="bio mb-3">Hi, my name is Simon Gröger. I am a student in my computer science master at TU Darmstadt and currently working on a  trajectory optimization project.<br></div><!--//bio-->
 					<hr> 
 				</div><!--//profile-section-->
+				<div>
+					<h1 class="blog-name pt-lg-4 mb-0"><a class="no-text-decoration" href="#" >Motion Planning in RKHS</a></h1>
+					<h1 class="blog-name2 pt-lg-2 mb-0"><a class="no-text-decoration" href="#Introduction" >Introduction</a></h1>
+					<h1 class="blog-name2 pt-lg-1 mb-0"><a class="no-text-decoration" href="#Math" >Math</a></h1>
+					<h1 class="blog-name2 pt-lg-1 mb-0"><a class="no-text-decoration" href="#Implementation" >Implementation</a></h1>
+					<h1 class="blog-name2 pt-lg-1 mb-0"><a class="no-text-decoration" href="#Experiments" >Experiments</a></h1>
+					<h1 class="blog-name2 pt-lg-1 mb-0"><a class="no-text-decoration" href="#Insights" >Insights</a></h1>
+					<h1 class="blog-name2 pt-lg-1 mb-0"><a class="no-text-decoration" href="#Conclusion" >Conclusion</a></h1>
+
+				</div>
 			</div>
 		</nav>
     </header>
@@ -64,7 +74,7 @@ Actual content
 -->
 
 <header class="blog-post-header">
-	<h2 class="title mb-2">Motion Planning in RKHS</h2>
+	<h1 class="title mb-2"><span id="Motion Planning in RKHS"></span>Motion Planning in RKHS</h1>
 	<div class="meta mb-3"><span class="date">Intelligent Robotic Manipulation Project Lab II</span><span class="date">April 24 - Oktober 24</span><span class="date">Simon Gröger</span></div>
 </header>
 			    
@@ -75,59 +85,41 @@ Actual content
 </figure>
 
 <p></p>
-In this project the goal is a fast motion planning approach using the Reproducing Kernel Hilbert Space. 
+In this project the goal is fast trajectory planning approach using the Reproducing Kernel Hilbert Space. 
 This approach may lead to better results as the problem formulation has fewer local optima.
 </p>
 
-<h3 class="mt-5 mb-3">Introduction</h3>
+<h2 class="mt-5 mb-3"><span id="Introduction"></span>Introduction</h2>
 
 <p>
-	In motion planning trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS). The Trajectory is intialized in a straight line from start to goal configuration and then the cost of the trajectory is minimized using functional gradient descent thus avoiding the obstacles
-	In motion planning trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS). The Trajectory is intialized in a straight line from start to goal configuration and then the cost of the trajectory is minimized using functional gradient descent thus avoiding the obstacles
-
-In motion planning trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS). The Trajectory is intialized in a straight line from start to goal configuration and then the cost of the trajectory is minimized using functional gradient descent thus avoiding the obstacles
-
+	In motion planning trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS). The Trajectory is intialized in a straight line from start to goal configuration and then the cost of the trajectory is minimized using functional gradient descent thus avoiding obstacles.
+</p>
+<p>
+	The trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS) and intialized in a straight line from start to goal configuration. Then the cost of the trajectory is minimized using functional gradient descent thus avoiding the obstacles
 </p>
 
-<h3 class="mt-5 mb-3">Math</h3>
+<h2 class="mt-5 mb-3"><span id="Math"></span>Math</h2>
 
 <h4 class="mt-3 mb-3">Trajectory Formulation</h4>
 
 <p> 
 
-	The trajectory is defined in the reproducing kernel hilbert space and has a parameter matrix \(\alpha\), a Kernel matrix K and an additional matrix J. 
-	The kernel matrix uses the RBF kernel and the matrix J enables cross joint communticaion and optimization.
-	The trajectory can be evaluated to the jointposition for any timestep t using \[ evaluate(K, J, \alpha, t) = K(\cdot, t) \alpha J \]
-	To evaluate the joint velocity we define an additional kernelmatrix dK with \( dK = {\partial \over \partial t} K \) , such that it holds:  \[ {\partial \over \partial t} evaluate(K, J, \alpha, t) = evaluate(dK, J, \alpha, t) \]
-	Thus the can faster evaluate the joint velocity without having to take a derivative each time.
-	During the trajectory optimzation a finite set of supporting points \( t_i \) for \( i \in \{1,...,n_{support}\} \) are used.
+	Our trajectory, defined in RKHS, is defined between 0 and 1 and has a parameter matrix \(\alpha\), a kernel matrix K and an additional matrix J. 
+	The kernel matrix uses the RBF kernel and the matrix J enables cross joint communication and optimization.
+	The trajectory can be evaluated to the joint position for any timestep \(t\) with \(0 \le t \le 1\) using \[ evaluate(K, J, \alpha, t) = K(\cdot, t) \alpha J \]
+	For the evaluation of the joint velocity, we define an additional kernelmatrix dK with \( dK = {\partial \over \partial t} K \) , such that it holds:  \[ {\partial \over \partial t} evaluate(K, J, \alpha, t) = evaluate(dK, J, \alpha, t) \]
+	Thus the evaluation of the joint velocity is faster without having to differentiate each time.
+	During the trajectory optimzation a finite fixed set of supporting points \( t_i \) for \( i \in \{1,...,n_{support}\} \) are used.
 </p>	
 
 
-<h4 class="mt-3 mb-3">Trajectory Initialization</h4>
-
-<p> 
-We start the trajecotry initialization by computing \( n_{support} \) supporting timesteps \( t_i \) between 0 and 1, which are usually equally distanced.
-The Kernel matrix K and dK are initialized with
-\[
-K[i, j] = \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
-\]
-and 
-\[
-dK[i, j] = \frac{(t_i - t_j)}{\text{rbf_var}^2} \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
-\]
-with the variance rbf_var.
-The matrix J is initialized as the addition of the identity matrix and random gaussian noise. The magnitude of the gaussian noise influences the cross joint communication and convergence speed. We achieved good robust results with a mean of 0.15.
-</p>
-
-
-<h4 class="mt-3 mb-3">Loss Formulation</h4>
+<h4 class="mt-5 mb-3">Constraint Loss Formulation</h4>
 
 <p>
-The trajectory optimization problem has a constraint loss, with the loss of the trajectory in the cost map and multiple trajectory constraints.
-The trajectory constraints define the distance of the start and final configuration to the start and end of the trajectory. Also the joint position and velocity are limited to the respective max and min constraints.
+The trajectory optimization problem consists of the loss of the trajectory in the cost map and multiple trajectory constraints.
+The trajectory constraints define the distance of the start and end of the trajectory to the start and goal configuration of our environment. Additionally, the joint position is limited to a max and min position and the joint velocity is limited to an maximum absolute velocity.
 
-Therefore the constraint optimization problem formulation is the following:
+Therefore the constraint formulation of our optimization problem is the following:
 
 \[ \min_{\alpha} L(\alpha) = \sum_{i=1}^{n_{support}} costmap( fk(evaluate(K, J, \alpha, t_i) ) + { \lambda_{reg}  \over 2 } || evaluate(K, J, \alpha, \cdot) ||^2_2 \]
 s.t. 
@@ -141,10 +133,10 @@ s.t.
 </p>
  
 
-<h4 class="mt-3 mb-3">Constraint Gradient update</h4>
+<h4 class="mt-5 mb-3"><span id="Lagragian Loss Formulation"></span>Lagragian Loss Formulation</h4>
 
 <p>
-During optimization the constraint loss is transformed to a Lagragian formulation and optimized using the Squared Penalty Method. This method increases the lagragian multiplier by an order of magnitude when the current loss was minimized until all constraints are satified.
+During optimization the constraint loss is transformed to a Lagragian formulation and optimized using the Squared Penalty Method. This method iteratively minimizes the current loss and increases the Lagragian multiplier by an order of magnitude until all constraints are satified.
 </p>
 
 <p>
@@ -155,7 +147,8 @@ The Constraint Loss Formulaton is defined as
  + \lambda_{jl} JointLimitLoss(\alpha) + \lambda_{reg} || evaluate(K, J, \alpha, \cdot) ||^2_2   
 \]
 </p>
-
+<br>
+<br>
 <p>
 where the StartGoalLoss is defined as 
 \[
@@ -168,7 +161,8 @@ StartGoalPositionLoss(\alpha) = {1 \over 2 } || evaluate(K, J, \alpha, t_1)  - c
 StartGoalVelocityLoss(\alpha) = {1 \over 2 } || evaluate(dK, J, \alpha, t_1) ||^2_2 + {1 \over 2 } || evaluate(dK, J, \alpha, t_{n_{support}}) ||^2_2
 \]
 </p>
-
+<br>
+<br>
 <p>
 Contrary to the StartGoalLoss, the JointLimitLoss is only applied if the limit is exceeded as thus is a bit more complicated
 \[
@@ -186,7 +180,9 @@ mean\_joint\_position = 0.5 * (max\_joint\_position + min\_joint\_position)
 \[
 std\_joint\_position = 0.5 * |max\_joint\_position - min\_joint\_position|
 \]
-
+</p>
+<br>
+<p>
 \[
 JointVelocityLimitLoss(\alpha) = \sum_{i=1}^{n_{support}} \sum_{j=1}^{n_{joints}}  \left[ JointVelocityLimitViolated(\alpha, i, j) \right] \left({ evaluate(dK, J, \alpha, t_i)[j] | \over max\_joint\_velocity } \right)^2
 \]
@@ -194,9 +190,10 @@ JointVelocityLimitLoss(\alpha) = \sum_{i=1}^{n_{support}} \sum_{j=1}^{n_{joints}
 JointVelocityLimitViolated(\alpha, i, j) = |evaluate(dK, J, \alpha, t_i)[j] | \gt max\_joint\_velocity
 \]
 </p>
-
+<br>
+<br>
 <p>
-In the optimization process the obstacle loss is adjusted to overcome local optima and improve convergence.
+For the optimization process the obstacle loss is adjusted from the initial objective to overcome local optima and improve convergence.
 The used obstacle loss combines the average and the maximum trajectory loss for the supporting points with a hyperparameter \( \lambda_{max\_cost} \) and is defined as follows:
 
 \[ ObstacleLoss(\alpha) = 
@@ -209,11 +206,81 @@ ObstacleLoss_{t_i}(\alpha) = costmap( fk(evaluate(K, J, \alpha, t_i) )
 </p>
 
 
+<h2 class="mt-5 mb-3"><span id="Implementation"></span>Implementation</h2>
+
+<p>
+The Trajectory Optimization is implemented in python with using jax and its numpy interface.
+Jax has two features we want to utilize in this work:
+The auto differentiation of functions can speedup the deelopment process as an adequate loss function can be designed without having to implement the analytical gradient each time to test it.
+Jax is able to achieve very fast runtimes using its just-in-time compilation of python code and thus being able to do trajecotry optimization at 50hz.
+</p>
 
 
-<h4 class="mt-5 mb-3">Equation Derivation</h4>
-<h4 class="mt-5 mb-3">Algorithmic Pipeline Derivation</h4>
-<h5 class="mt-5 mb-3">Pseudocode with linenumbers</h5>
+<h4 class="mt-5 mb-3"><span id="Trajectory Initialization"></span>Trajectory Initialization</h4>
+
+<p> 
+We start the trajecotry initialization by choosing \( n_{support} \) supporting timesteps \( t_i \) between 0 and 1, which are usually equally distanced.
+The Kernel matrix K and dK are initialized with the RBF kernel 
+\[
+K[i, j] = \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
+\]
+and its derivative
+\[
+dK[i, j] = \frac{t_i - t_j}{\text{rbf_var}^2} * \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
+\]
+with the variance rbf_var.
+</p>
+<p>
+The matrix J is initialized as the addition of the identity matrix and random gaussian noise. The magnitude of the gaussian noise influences the cross joint communication and convergence speed. We achieved good robust results with a mean of 0.15.
+</p>
+<p>
+The \(\alpha\) values are initialized by fitting the trajectory to 
+\[
+d(t) = \text{start_config} + (\text{goal_config} - \text{start_config}) * c(t) 
+\]
+with a function 
+\[
+c(t) = 6 * t^5 - 15 * t^4 + 10 * t^3
+\]
+where the function c was selected such that c(0)=0, c(1)=1, c'(0)=0, c'(1)=0, c''(0)=0, c''(1)=0 holds.
+This initializes the trajectory to a straight line starting at start_config and finishing at goal_config while having zero velocity and acceleration at start and end.
+</p>
+
+
+<h4 class="mt-5 mb-3">Analytical Gradient</h4>
+
+<p>
+To speedup the trajectory optimization we do not use the automatic differentiation offered by jax but implemented the analytical gradient.
+</p>
+<p>
+While the gradient computation of the various elements of our loss function is very straight-forward, the complexity of the Lagragian loss complicated the combination of sub-gradients to the final gradient.
+During the implementation of the analytical gradient we used two main supporting tools:
+<br>
+The newest model of ChatGPT GPT-4o was able to implement the analytical gradient of a provided function with hardly any mistakes. 
+<br>
+By comparing the result of our implementation to the one of the jax auto differentiation we could iteratively ensure the correctness of our gradient computation for each sub function.
+<br>
+The combination of both tools made this part of this work a lot more pleasant and speedup the development significantly.
+</p>
+
+<h5 class="mt-5 mb-3">Optimizer</h5>
+
+<p>
+As described in the <a href="#Lagragian Loss Formulation">Largragian Loss Formulation Section</a>, we use a dual optimiation to find a minimal solution while holding the constraints.
+For the dual optimization, especially with the lambda having different orders of magnitude, a fixed learning rate is not suitable to robustly find a solution.
+Therefore we implemented two different optimizers for comparison.
+<br>
+The first optimizer uses regular Gradient Descent with a different learning rate for each outer iteratetion of the dual optimization to compensate the increase of the lambdas.
+The second optimizer uses Backtracking Line Search Gradient Descent and thus uses an adaptive learning rate which does not need any other finetuning.
+<br>
+In practise the Backtracking Line Search Gradient Descent is faster and more robust than the regular Gradient Descent.
+</p>
+
+
+
+
+<h4 class="mt-5 mb-3">Algorithmic Pipeline</h4>
+<h5 class="mt-3 mb-3">Pseudocode with linenumbers</h5>
 
 
 <pre>
@@ -233,7 +300,9 @@ while not constraint_fulfilled(alpha, K, dK, J) or n_outer==0 do
 </code>
 </pre>
 
-<h3 class="mt-5 mb-3">Experiments</h3>
+<h2 class="mt-5 mb-3"><span id="Experiments"></span>Experiments</h2>
+
+<h4 class="mt-3 mb-3">Environment</h4>
 
 <p>
 Our Environment is defined by a number of obstacles that need to be avoided and passed with maximal distance. We define a costmap with the 
@@ -258,7 +327,27 @@ From this costmap we can derive a gradient field to maximize the distance to the
 </figure>
 
 
-<h5 class="mt-5 mb-3">Complete Robot Obstacle Avoidance</h5>
+<h4 class="mt-3 mb-3">Videos</h4>
+
+TODO Videos: 
+	optimization process
+	final result
+
+
+<h4 class="mt-3 mb-3">Runtime</h4>
+
+TODO Runtime comparison (evtl jax profile)
+	GD / BLSGD
+	jax auto / analytical gradient
+	runtime of parts of the loss function
+	scalability for N_timesteps
+
+
+
+
+<h2 class="mt-5 mb-3"><span id="Insights"></span>Insights</h2>
+
+<h4 class="mt-3 mb-3">Complete Robot Obstacle Avoidance</h4>
 
 <p>
 Depending on the application not only the end-effector but the whole robot is placed in an environment with obstacles which are to avoid. 
@@ -270,7 +359,7 @@ with \(fk_j\) being the forward kinematic for the joint \(j\) .
 </p>
 
 
-<h5 class="mt-5 mb-3">Lambda Max Cost</h5>
+<h4 class="mt-5 mb-3">Lambda Max Cost</h4>
 
 <p>
 In our loss formulation we introduced the trajectory obstacle cost as the weighted sum of the average obstacle cost and the maximum obstacle cost using \( \lambda_{max\_cost} \).
@@ -298,29 +387,25 @@ In the following figure you can see the results of different \( \lambda_{max\_co
 <!-- 0.75 1.73 2.19   -->
 <!-- 1.0  1.82 2.19   -->
 
-
-Videos
-
-Runtime for different problems, GD / BLSGD, joint constraints pytorch, jax Gradient descent, jax line search  
-
-<h5 class="mt-5 mb-3">Insights on failed ideas</h5>
-
-
+<h4 class="mt-5 mb-3">Jacobian Matrix</h4>
 <p>
-The original paper sugested using the Jacobian matrix in the trajectory formulation to enable joint optimization with communication across different joints influencing each other. In our experiments the optimization didnt work anymore if we included the actual Jacobian matrix as the magnitude of the entries was very different. Naturally the elements for the first joint are larger than those of the last joints, which makes any optimization very hard.
-We therefore used a identity matrix and added N(0, 0.2) to the elements to enable random cross joint communication.
+In our trajectory formulation we use a matrix J to enable joint optimization with communication across different joints influencing each other.
+The original paper sugested using the robotic Jacobian matrix as this matrix J. In our experiments the optimization did not find a suitable solution if we used the actual Jacobian matrix.
+We think that the reason is that the magnitude of the entries of a robotic Jacobian very different. Naturally the elements for the first joint are larger than those of the last joints, which makes any optimization with the same learning rate impossible or at least very hard.
+But as we have seen that random cross joint communication is speeding up the trajectory optimzation, we use a different matrix J, described in the <a href="#Trajectory Initialization">Trajectory Initialization Section</a>.
 </p>
 
-<h3 class="mt-5 mb-3">Conclusion</h3>
+<h2 class="mt-5 mb-3"><span id="Conclusion"></span>Conclusion</h2>
 
 While a trajectory formulated in the RKHS is easier to optimize the approach is still very sensitive to the hyper parameters.
 
 
+TODO jax porofile recompilation
 
 
 
 <!--
-<h3 class="mt-5 mb-3">Code Block Example</h3>
+<h2 class="mt-5 mb-3">Code Block Example</h2>
 <p>You can get more info at <a class="text-link" href="https://highlightjs.org/" target="_blank">https://highlightjs.org/</a>. Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Aenean commodo ligula eget dolor. Aenean massa. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Donec quam felis, ultricies nec, pellentesque eu, pretium quis, sem. Nulla consequat massa quis enim. Donec pede justo, fringilla vel, aliquet nec, vulputate eget, arcu. In enim justo, rhoncus ut, imperdiet a, venenatis vitae, justo. Nullam dictum felis eu pede mollis pretium. Integer tincidunt. Cras dapibus. Vivamus elementum semper nisi. Aenean vulputate eleifend tellus. Aenean leo ligula, porttitor eu, consequat vitae, eleifend ac, enim. </p>
 <pre>
 	<code>
@@ -343,7 +428,7 @@ export  $initHighlight;
 </pre>
 
 
-<h3 class="mt-5 mb-3">Typography</h3>
+<h2 class="mt-5 mb-3">Typography</h2>
 <p>Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Aenean commodo ligula eget dolor. Aenean massa. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus.</p>
 <h5 class="my-3">Bullet Points:</h5>
 <ul class="mb-5">
@@ -401,7 +486,7 @@ export  $initHighlight;
 
 
 
-<h3 class="mt-5 mb-3">Video Example</h3>
+<h2 class="mt-5 mb-3">Video Example</h2>
 <p>Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Aenean commodo ligula eget dolor. Aenean massa. Cum sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Donec quam felis, ultricies nec, pellentesque eu, pretium quis, sem. Nulla consequat massa quis enim. </p>
 
 <div class="ratio ratio-16x9">
