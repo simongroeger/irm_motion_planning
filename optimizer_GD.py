@@ -51,12 +51,12 @@ class GradientDescentOptimizer:
     def optimize(self):
         init_alpha = self.trajectory.initTrajectory(self.env.start_config, self.env.goal_config)
         if self.dualOptimization:
-            if self.jit_optimize:
+            if self.jitLoop:
                 return self.jit_dual_optimize(init_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config)
             else:
                 return self.dual_optimize(init_alpha)
         else:
-            if self.jit_optimize:
+            if self.jitLoop:
                 return self.jit_optimize(init_alpha, self.env.obstacles, self.env.start_config, self.env.goal_config)
             else:
                 return self.plain_optimize(init_alpha)
@@ -145,7 +145,7 @@ class GradientDescentOptimizer:
 
                 alpha = new_alpha
 
-            #print("end of inner loop minimzation with loss", last_loss)
+            #print("end of inner loop minimzation", innner_iter, "with loss", last_loss)
 
 
             if self.trajectory.constraintsFulfilled(alpha, self.env.start_config, self.env.goal_config):
@@ -161,7 +161,6 @@ class GradientDescentOptimizer:
 
     @partial(jax.jit, static_argnames=['self'])
     def jit_dual_optimize(self, alpha, obstacles, start_config, goal_config):
-    
 
         @partial(jax.jit, static_argnames=[])
         def inner_cond_fun(inner_state):

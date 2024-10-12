@@ -42,6 +42,7 @@ class BacktrackingLineSearchOptimizer:
         self.bls_beta_minus = args.bls_beta_minus
         self.bls_beta_plus = args.bls_beta_plus
 
+        self.extendedVis = args.extended_vis
 
         self.env = Environment()
         self.trajectory = Trajectory(args)
@@ -65,6 +66,10 @@ class BacktrackingLineSearchOptimizer:
 
         lambda_sg_constraint = self.lambda_sg_constraint
         lambda_jl_constraint = self.lambda_jl_constraint
+
+        if self.extendedVis:
+            p = []
+            p.append(np.array(self.trajectory.evaluate(alpha, self.trajectory.km, self.trajectory.jac)))
 
         for outer_iter in range(self.max_outer_iteration):
             bls_lr = self.bls_lr_start
@@ -98,17 +103,22 @@ class BacktrackingLineSearchOptimizer:
                     #print("end of inner loop minimzation too small loss change")
                     break
 
-            print("end of inner loop minimzation", outer_iter, "at inner iter", innner_iter, "with loss", loss)
+                if self.extendedVis:
+                    p.append(np.array(self.trajectory.evaluate(alpha, self.trajectory.km, self.trajectory.jac)))
+
+            #print("end of inner loop minimzation", outer_iter, "at inner iter", innner_iter, "with loss", loss)
 
 
             if self.trajectory.constraintsFulfilled(alpha, self.env.start_config, self.env.goal_config):
-                print("constraints fulfiled, end")
+                #print("constraints fulfiled, end")
                 break                    
             else: 
-                print("constraints violated")
+                #print("constraints violated")
                 lambda_sg_constraint *= self.lambda_constraint_increase
                 lambda_jl_constraint *= self.lambda_constraint_increase
 
+        if self.extendedVis:
+            return alpha, p
 
         return alpha
 

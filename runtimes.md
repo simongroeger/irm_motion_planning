@@ -1,5 +1,30 @@
 # Runtime in ms
 
+
+
+Measurment 10 * 100
+
+Jit
+BLS: 3.12 ms, 0.01
+GD: 7.26 ms, 0.06
+
+NoJit:
+BLS: 34.81 ms, 1.03
+GD: 122.59 ms, 1.31
+
+Gradient
+analytical: 3.12 ms, 0.01
+automatic: 3.56, 0.03 
+nojit automatic: 292.66, 2.40
+
+
+
+
+
+
+
+# Old
+
 ## Analytical Gradient
 
 | CPU                               | Jitted Loop | Not Jitted    |

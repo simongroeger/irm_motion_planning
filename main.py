@@ -15,6 +15,8 @@ def parse_args():
 
     # profiling
     parser.add_argument('--profiling', type=lambda x: (str(x).lower() == 'true'), default=False)
+    parser.add_argument('--extended-vis', type=lambda x: (str(x).lower() == 'true'), default=False)
+    parser.add_argument('--n-measurements', type=int, default=1)
     parser.add_argument('--n-times', type=int, default=1)
 
     # optimizer
@@ -81,12 +83,16 @@ def main():
         exit(-1)
 
     def multiple_optimizations():
-        st = time.time()
-        for i in range(args.n_times):
-            result_alpha = optimizer.optimize()
-            jax.block_until_ready(result_alpha)
+        runtimes = []
+        for j in range(args.n_measurements):
+            st = time.time()
+            for i in range(args.n_times):
+                result_alpha = optimizer.optimize()
+                jax.block_until_ready(result_alpha)
             et = time.time()
-        print("took", 1000*(et-st)/args.n_times, "ms")
+            runtimes.append(1000*(et-st)/args.n_times)
+            print("took", 1000*(et-st)/args.n_times, "ms")
+        print(np.mean(runtimes), np.std(runtimes))
         return result_alpha
 
     if args.profiling:
@@ -94,7 +100,10 @@ def main():
             # Run the operations to be profiled
             result_alpha = multiple_optimizations()
     else:
-        result_alpha = multiple_optimizations()
+        if args.extended_vis:
+            result_alpha, p = multiple_optimizations()
+        else:
+            result_alpha = multiple_optimizations()
 
     avg_result_cost = optimizer.trajectory.compute_trajectory_cost(result_alpha, optimizer.env.obstacles, optimizer.env.start_config, optimizer.env.goal_config, 0, 0, 0)
     max_result_cost = optimizer.trajectory.compute_trajectory_cost(result_alpha, optimizer.env.obstacles, optimizer.env.start_config, optimizer.env.goal_config, 0, 0, 1)
@@ -104,6 +113,12 @@ def main():
     #print(args.lambda_max_cost)
     #np.savetxt("trajectory_result_" + str(args.lambda_max_cost) + ".txt", np_trajectory)
     np.savetxt("trajectory_result.txt", np_trajectory)
+
+    if args.extended_vis:
+        p_np = np.array(p)
+        print(p_np.shape)
+        np.savetxt("trajectory_series.txt", p_np.reshape((-1, args.n_joints*args.n_timesteps)))
+
 
 if __name__ == "__main__":
     main()

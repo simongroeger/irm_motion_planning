@@ -41,17 +41,16 @@
 					
 					<div class="bio mb-3">Hi, my name is Simon Gröger. I am a student in my computer science master at TU Darmstadt and currently working on a  trajectory optimization project.<br></div><!--//bio-->
 					<hr> 
+					<div>
+						<h3 class="navbio pt-lg-4 mb-0"><a class="no-text-decoration" href="#" >Motion Planning in RKHS</a></h3>
+						<h5 class="navbio pt-lg-2 mb-0"><a class="no-text-decoration" href="#Introduction" >Introduction</a></h5>
+						<h5 class="navbio pt-lg-1 mb-0"><a class="no-text-decoration" href="#Math" >Math</a></h5>
+						<h5 class="navbio pt-lg-1 mb-0"><a class="no-text-decoration" href="#Implementation" >Implementation</a></h5>
+						<h5 class="navbio pt-lg-1 mb-0"><a class="no-text-decoration" href="#Experiments" >Experiments</a></h5>
+						<h5 class="navbio pt-lg-1 mb-0"><a class="no-text-decoration" href="#Insights" >Insights</a></h5>
+						<h5 class="navbio pt-lg-1 mb-0"><a class="no-text-decoration" href="#Conclusion" >Conclusion</a></h5>
+					</div>
 				</div><!--//profile-section-->
-				<div>
-					<h1 class="blog-name pt-lg-4 mb-0"><a class="no-text-decoration" href="#" >Motion Planning in RKHS</a></h1>
-					<h1 class="blog-name2 pt-lg-2 mb-0"><a class="no-text-decoration" href="#Introduction" >Introduction</a></h1>
-					<h1 class="blog-name2 pt-lg-1 mb-0"><a class="no-text-decoration" href="#Math" >Math</a></h1>
-					<h1 class="blog-name2 pt-lg-1 mb-0"><a class="no-text-decoration" href="#Implementation" >Implementation</a></h1>
-					<h1 class="blog-name2 pt-lg-1 mb-0"><a class="no-text-decoration" href="#Experiments" >Experiments</a></h1>
-					<h1 class="blog-name2 pt-lg-1 mb-0"><a class="no-text-decoration" href="#Insights" >Insights</a></h1>
-					<h1 class="blog-name2 pt-lg-1 mb-0"><a class="no-text-decoration" href="#Conclusion" >Conclusion</a></h1>
-
-				</div>
 			</div>
 		</nav>
     </header>
@@ -84,18 +83,18 @@ Actual content
 	<figcaption class="mt-2 text-center image-caption">Trajectory Optimization with a 3-link-robot</figcaption>
 </figure>
 
-<p></p>
-In this project the goal is fast trajectory planning approach using the Reproducing Kernel Hilbert Space. 
-This approach may lead to better results as the problem formulation has fewer local optima.
+<p>
+	In this project we develop a trajectory optimization approach using the Reproducing Kernel Hilbert Space. 
+	We use jax and its just-in-time compilation and analytical gradients to reduce the runtime to 3.1ms and enable robot deployment.
+	We use a constraint optimization problem for the trajectory to reach the start and goal configuration and respect the physical limitations of the robot.
 </p>
 
 <h2 class="mt-5 mb-3"><span id="Introduction"></span>Introduction</h2>
 
 <p>
-	In motion planning trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS). The Trajectory is intialized in a straight line from start to goal configuration and then the cost of the trajectory is minimized using functional gradient descent thus avoiding obstacles.
-</p>
-<p>
-	The trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS) and intialized in a straight line from start to goal configuration. Then the cost of the trajectory is minimized using functional gradient descent thus avoiding the obstacles
+	In motion planning, the trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS) and intialized in a straight line from start to goal configuration. 
+	By minimizing the cost of the trajectory using functional gradient descent we avoid obstacles.
+	Using the RKHS and functional gradients usually leads to better results as the problem formulation has fewer local optima.
 </p>
 
 <h2 class="mt-5 mb-3"><span id="Math"></span>Math</h2>
@@ -106,10 +105,20 @@ This approach may lead to better results as the problem formulation has fewer lo
 
 	Our trajectory, defined in RKHS, is defined between 0 and 1 and has a parameter matrix \(\alpha\), a kernel matrix K and an additional matrix J. 
 	The kernel matrix uses the RBF kernel and the matrix J enables cross joint communication and optimization.
-	The trajectory can be evaluated to the joint position for any timestep \(t\) with \(0 \le t \le 1\) using \[ evaluate(K, J, \alpha, t) = K(\cdot, t) \alpha J \]
-	For the evaluation of the joint velocity, we define an additional kernelmatrix dK with \( dK = {\partial \over \partial t} K \) , such that it holds:  \[ {\partial \over \partial t} evaluate(K, J, \alpha, t) = evaluate(dK, J, \alpha, t) \]
+	The trajectory can be evaluated to the joint position for any timestep \(t\) in \([0, 1]\) using 
+	\[ 
+	evaluate(K, J, \alpha, t) = K(\cdot, t) \alpha J 
+	\]
+	and the joint position of joint \(j\) can be received with  \( evaluate(K, J, \alpha, t)[j] \).
+<br>
+	For the evaluation of the joint velocity, we define an additional kernelmatrix dK with \( dK = {\partial \over \partial t} K \) , such that it holds:  
+	\[ 
+	{\partial \over \partial t} evaluate(K, J, \alpha, t) = evaluate(dK, J, \alpha, t) 
+	\]
 	Thus the evaluation of the joint velocity is faster without having to differentiate each time.
-	During the trajectory optimzation a finite fixed set of supporting points \( t_i \) for \( i \in \{1,...,n_{support}\} \) are used.
+</p>
+<p>
+	During the trajectory optimzation a finite fixed set of supporting points \( t_i \) for \( i \in \{1,...,n_{support}\} \) is used to allow the use a precomputed fixed Kernel matrix to speedup the trajectory optimization.
 </p>	
 
 
@@ -127,9 +136,9 @@ s.t.
 \[ { 1 \over 2 } || evaluate(K, J, \alpha, t_{n_{support}}) - config_{goal} ||^2_2 \le \epsilon_{position}  \]
 \[ { 1 \over 2 } || evaluate(dK, J, \alpha, t_1) ||^2_2 \le \epsilon_{velocity}  \]
 \[ { 1 \over 2 } || evaluate(dK, J, \alpha, t_{n_{support}}) ||^2_2 \le \epsilon_{velocity}  \]
-\[ \forall i \in \{1,...,n_{support}\} : evaluate(K, J, \alpha, t_i) \le jointposition_{max}  \]
-\[ \forall i \in \{1,...,n_{support}\} : evaluate(K, J, \alpha, t_i) \ge jointposition_{min}  \]
-\[ \forall i \in \{1,...,n_{support}\} : | evaluate(dK, J, \alpha, t_i) | \le jointvelocity_{max}  \]
+\[ \forall i \in \{1,...,n_{support}\}, \forall j \in \{1,...,n_{joints}\} : evaluate(K, J, \alpha, t_i)[j] \le jointposition_{max}  \]
+\[ \forall i \in \{1,...,n_{support}\}, \forall j \in \{1,...,n_{joints}\} : evaluate(K, J, \alpha, t_i)[j] \ge jointposition_{min}  \]
+\[ \forall i \in \{1,...,n_{support}\}, \forall j \in \{1,...,n_{joints}\} : | evaluate(dK, J, \alpha, t_i)[j] | \le jointvelocity_{max}  \]
 </p>
  
 
@@ -162,9 +171,9 @@ StartGoalVelocityLoss(\alpha) = {1 \over 2 } || evaluate(dK, J, \alpha, t_1) ||^
 \]
 </p>
 <br>
-<br>
 <p>
-Contrary to the StartGoalLoss, the JointLimitLoss is only applied if the limit is exceeded as thus is a bit more complicated
+Contrary to the StartGoalLoss, the JointLimitLoss is only applied if the limit is exceeded as thus is a bit more complicated.
+We chose to normalize the loss of the JointPositionLimit and JointVelocityLimit by using \(mean\_joint\_position = 0.5 (max\_joint\_position + min\_joint\_position)\), \(std\_joint\_position = 0.5 |max\_joint\_position - min\_joint\_position|\) and \(max\_joint\_velocity\) so that the loss of a constraint is 1 when the maximum or minimum is met and does not vary for different constraint values.
 \[
 JointLimitLoss(\alpha) = JointPositionLimitLoss(\alpha) + JointVelocityLimitLoss(\alpha)
 \]
@@ -173,12 +182,6 @@ JointPositionLimitLoss(\alpha) = \sum_{i=1}^{n_{support}} \sum_{j=1}^{n_{joints}
 \]
 \[
 JointPositionLimitViolated(\alpha, i, j) = evaluate(K, J, \alpha, t_i)[j] \gt max\_joint\_position \vee evaluate(K, J, \alpha, t_i)[j] \lt min\_joint\_position 
-\]
-\[
-mean\_joint\_position = 0.5 * (max\_joint\_position + min\_joint\_position)
-\]
-\[
-std\_joint\_position = 0.5 * |max\_joint\_position - min\_joint\_position|
 \]
 </p>
 <br>
@@ -191,18 +194,19 @@ JointVelocityLimitViolated(\alpha, i, j) = |evaluate(dK, J, \alpha, t_i)[j] | \g
 \]
 </p>
 <br>
-<br>
 <p>
 For the optimization process the obstacle loss is adjusted from the initial objective to overcome local optima and improve convergence.
-The used obstacle loss combines the average and the maximum trajectory loss for the supporting points with a hyperparameter \( \lambda_{max\_cost} \) and is defined as follows:
+The used obstacle loss combines the average and the maximum trajectory cost of the supporting points \(t_i\) with a hyperparameter \( \lambda_{max\_cost} \) and is defined as follows:
 
 \[ ObstacleLoss(\alpha) = 
-         \lambda_{max\_cost} \max_{i} ObstacleLoss_{t_i}(\alpha)
-  + (1 - \lambda_{max\_cost}) {1 \over n_{support}} \sum_{i=1}^{n_{support}} ObstacleLoss_{t_i}(\alpha)
+         \lambda_{max\_cost} \max_{i} ObstacleCost_{t_i}(\alpha)
+  + (1 - \lambda_{max\_cost}) {1 \over n_{support}} \sum_{i=1}^{n_{support}} ObstacleCost_{t_i}(\alpha)
 \]
 \[
-ObstacleLoss_{t_i}(\alpha) = costmap( fk(evaluate(K, J, \alpha, t_i) )
+ObstacleCost_{t_i}(\alpha) = costmap( fk(evaluate(K, J, \alpha, t_i) )
 \]
+
+We analyse the effect of different \( \lambda_{max\_cost} \) values in the <a href="#Insights">Insights</a>.
 </p>
 
 
@@ -226,7 +230,7 @@ K[i, j] = \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
 \]
 and its derivative
 \[
-dK[i, j] = \frac{t_i - t_j}{\text{rbf_var}^2} * \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
+dK[i, j] = \frac{t_i - t_j}{\text{rbf_var}^2} \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
 \]
 with the variance rbf_var.
 </p>
@@ -236,14 +240,14 @@ The matrix J is initialized as the addition of the identity matrix and random ga
 <p>
 The \(\alpha\) values are initialized by fitting the trajectory to 
 \[
-d(t) = \text{start_config} + (\text{goal_config} - \text{start_config}) * c(t) 
+d(t) = config_{start} + c(t) * (config_{goal} - config_{start})  
 \]
 with a function 
 \[
-c(t) = 6 * t^5 - 15 * t^4 + 10 * t^3
+c(t) = 6  t^5 - 15 t^4 + 10 t^3
 \]
 where the function c was selected such that c(0)=0, c(1)=1, c'(0)=0, c'(1)=0, c''(0)=0, c''(1)=0 holds.
-This initializes the trajectory to a straight line starting at start_config and finishing at goal_config while having zero velocity and acceleration at start and end.
+This initializes the trajectory to a straight line starting at \(config_{start}\) and finishing at \(config_{goal}\) while having zero velocity and acceleration at start and end.
 </p>
 
 
@@ -273,16 +277,17 @@ Therefore we implemented two different optimizers for comparison.
 The first optimizer uses regular Gradient Descent with a different learning rate for each outer iteratetion of the dual optimization to compensate the increase of the lambdas.
 The second optimizer uses Backtracking Line Search Gradient Descent and thus uses an adaptive learning rate which does not need any other finetuning.
 <br>
-In practise the Backtracking Line Search Gradient Descent is faster and more robust than the regular Gradient Descent.
+In practise the Backtracking Line Search Gradient Descent is more robust to different environments than the regular Gradient Descent due to the adaptive learning rate.
+We will compare both optimizers in the experiments regarding runtime.
 </p>
 
 
-
+<!--
 
 <h4 class="mt-5 mb-3">Algorithmic Pipeline</h4>
 <h5 class="mt-3 mb-3">Pseudocode with linenumbers</h5>
 
-
+	TODO 
 <pre>
 <code>
 alpha, K, dK, J = initialize_trajectory()
@@ -299,48 +304,164 @@ while not constraint_fulfilled(alpha, K, dK, J) or n_outer==0 do
 	
 </code>
 </pre>
+-->
+
+
 
 <h2 class="mt-5 mb-3"><span id="Experiments"></span>Experiments</h2>
 
 <h4 class="mt-3 mb-3">Environment</h4>
 
 <p>
-Our Environment is defined by a number of obstacles that need to be avoided and passed with maximal distance. We define a costmap with the 
+Our Environment is defined by the \(config_{start}\) and \(config_{goal}\) of the robot, and a number of obstacles that need to be avoided and passed with maximal distance. 
+</p><p>
+For the obstacles, we define a costmap with the 
 \[
-costfunction(x) = \sum_{i=1}^{n_{obstacles}} {0.8 \over 0.5 + 0.5 * ||x  - obstacle_i||^2_2 } 
+costfunction(x) = \sum_{i=1}^{n_{obstacles}} {0.8 \over 0.5 + 0.5 ||x  - obstacle_i||^2_2 } 
 \]
 to get a convex optimization problem concerning a 2D point in the environment.
+<br>
+The environment, we use in our experiments, is shown below along with the gradient field of the costmap that maximizes the distance to the obstacles
 </p>
 
-<figure class="blog-banner">
-	<img class="img-fluid" src="assets/images/obstacles_costmap.png" alt="image">
-	<figcaption class="mt-2 text-center image-caption">Obstacles of our environment with the resulting costmap and the robots start and goal configuration</figcaption>
+<figure class="left">
+	<img class="img-fluid" src="assets/images/obstacles_costmap.png" alt="image" width="50%">
+	<img class="img-fluid" src="assets/images/gradientfield.png" alt="image" width="45%">
+	<figcaption class="mt-2 text-center image-caption">Obstacles of our environment with the resulting costmap and the robots start and goal configuration on the left and Gradient Field of the Costmap on the right</figcaption>
 </figure>
+
+
+<h4 class="mt-5 mb-3">Runtime</h4>
 
 <p>
-From this costmap we can derive a gradient field to maximize the distance to the obstacles
+One goal of this project was to achieve a runtime of the trajectory optimization enabling robot control at 50hz.
+</p><p>
+In our experiments, we intialize the optimizers and perform the just-in-time compilation, which takes around a second, before our runtime measurements.
+As optimizers are able to solve dynamicly changing environments (\(config_{start}\), \(config_{goal}\), and obstacles) without recompilation, this approach is also possible for real robot deployment.
+And therefore, we find excluding the compilation fromthe runtime measurement the most realistic approach.
 </p>
 
+<h5 class="mt-3 mb-3">Optimizers</h5>
+<p>
+As previously discussed we implemented two optimizer to solve the problem. Both optimizer use the same just-in-time compiled loss and gradient function. For both optimizers, we implemented two versions of the optimization loop. The first version uses regular python code and the second one is adjusted to support just-in-time compilation by replacing <i>if</i> and <i>while</i> statements with constructs like <i><a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.cond.html">jax.lax.cond</a></i> and <i><a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.while_loop.html">jax.lax.while_loop</a></i>. 
+We use the analytical gradient for this experiment and compare their runtimes in the next table. 
+</p><p>
+We see that the Backtracking Line Search approach is significantly faster than the Regular Gradient Descent, which we attribute this to the fact that it needs almost only half the optimization steps (145 vs 259) due to its adaptive learning rate. 
+Also the JIT loop is a lot faster than the regular loop which was to be expected.
+</p>
+
+<table class="table table-bordered mb-5 table-center">
+	<thead>
+		<tr>
+			<th scope="col">Runtimes with Mean <br> and Standart Deviation </th>
+			<th scope="col">Backtracking Line Search <br> Gradient Descent</th>
+			<th scope="col">Regular <br> Gradient Descent </th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<th>Regular Loop</th>
+			<td> 34.81ms ( 1.03ms ) </td>
+			<td> 122.59ms ( 1.31ms ) </td>
+		</tr>
+		<tr>
+			<th>JIT Loop</th>
+			<td> 3.12ms ( 0.01ms ) </td>
+			<td> 7.26ms ( 0.06ms ) </td>
+		</tr>
+		
+	</tbody>
+</table>
+
+<h5 class="mt-3 mb-3">Analytical Gradient and Automatic Differentiation</h5>
+<p>
+	We also want to evaluate the speedup of our analytical gradient compared to the <a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.grad.html">automatic differentiation of jax</a>.
+	Here we observe only a small diffference when using the JIT loop but a big difference in the regular loop. 
+	From analysing the <a href="https://jax.readthedocs.io/en/latest/profiling.html">jax profile</a> we can see that the automatic differentiation performs an explicit backwards step in each iteration of the regular loop to discover the gradient path while it saves this path and just recomputes the resuling gradient in the JIT loop and is therefore much faster. 
+	We think that this is very interesting because the loss function has been just-in-time compiled so the gradient path should not be able to vary.
+</p>
+
+<table class="table table-bordered mb-5 table-center">
+	<thead>
+		<tr>
+			<th scope="col">Runtimes with Mean <br> and Standart Deviation </th>
+			<th scope="col"> Analytical <br> Gradient  </th>
+			<th scope="col"> Automatic <br> Differentiation </th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<th>Regular Loop</th>
+			<td> 34.81ms ( 1.03ms ) </td>
+			<td> 292.66ms ( 2.40ms ) </td>
+		</tr>
+		<tr>
+			<th>JIT Loop</th>
+			<td> 3.12ms ( 0.01ms ) </td>
+			<td> 3.56ms ( 0.03ms ) </td>
+		</tr>
+		
+	</tbody>
+</table>
+
+<h5 class="mt-3 mb-3">Loss and Gradient Function and its subparts</h5>
+<p>
+	Next we want to analyse the runtime of the loss and gradient function and how this divides into the different subparts.
+	We again use the jax profile to get these information. Unfortunately it is not possible to measure the runtime of parts of a jit-compiled function and therefore we have to use a uncompiled version of the loss and grdient function to get the runtime of the jit-compiled parts of the function. These results are not the same as when the whole loss function is compiled as some optimizations between multiple subfunction are not possible. But they give an intuition on the relative runtimes.
+</p><p>
+	We show the results in the following plot. We see that the runtimes of matching loss and gradient function are often very similar, while the only significant difference is the Obstacle Loss which is due to the fact that the gradient of a maximum operator takes longer to compute than the maximum itself.
+</p>
+
+<div>
 <figure class="blog-banner">
-	<img class="img-fluid" src="assets/images/gradientfield.png" alt="image">
-	<figcaption class="mt-2 text-center image-caption">Gradient Field of the Costmap</figcaption>
+	<img class="img-fluid" src="assets/images/runtime_plot.png" alt="image" width="1000px">
 </figure>
+</div>
+
+<p>
+While those functions only need a few microseconds in this experiment, the computation of the overall loss and gradient function only need 18.2µs and 24.2µs each when they are jit-compiled.
+So there is still a lot of speedup in the joint compilation but we are not able to analyse it. 
+</p>
 
 
-<h4 class="mt-3 mb-3">Videos</h4>
+<h5 class="mt-3 mb-3">Scalability for different problem sizes</h5>
 
-TODO Videos: 
-	optimization process
-	final result
+We also want to evaluate how well our solution scales for different problem sizes. In our case the amount of supporting points \(n_{support}\) influences the problem size. Especially as it influences the size of the kernel matrices quadratically it affects the runtimes heavily.
+While we can observe a linear runtime complexity for up to 100 supporting points, the runtime grows quadratically in larger problems.
+
+<div width="800px>
+	<figure class="blog-banner">
+		<img class="img-fluid" src="assets/images/runtime_problemsize.png" alt="image" width="800px">
+	</figure>
+</div>
 
 
-<h4 class="mt-3 mb-3">Runtime</h4>
+<h4 class="mt-5 mb-3">Videos</h4>
 
-TODO Runtime comparison (evtl jax profile)
-	GD / BLSGD
-	jax auto / analytical gradient
-	runtime of parts of the loss function
-	scalability for N_timesteps
+<p>
+	In this section we want to show two videos of our trajectory optimization.
+	<br>
+	The first video shows the trajectory optimization process, starts at the straight line intialization and converges to the optimal solution avoiding all the obstacles.
+</p>
+
+<div>
+<img id="gif-1" src="assets/images/trajectory_series.gif" width="800px"
+    onmouseover="document.getElementById('gif-1').src='assets/images/trajectory_series.gif'" 
+/></div>
+
+
+<p>
+	and in the following video you see the final robot movement of the optimized trajectory.
+</p>
+
+<div>
+<img id="gif1" src="assets/images/trajectory_robotmovement.gif" width="800px"
+    onmouseover="document.getElementById('gif1').src='assets/images/trajectory_robotmovement.gif'" 
+/></div>
+
+<!-- TODO Videos: final result yupiter -->
+
+
 
 
 
@@ -353,7 +474,7 @@ TODO Runtime comparison (evtl jax profile)
 Depending on the application not only the end-effector but the whole robot is placed in an environment with obstacles which are to avoid. 
 In this case the cost fuction can be easily adjusted to minimize the cost at the position of all joints:
 \[ 
-ObstacleLoss_{t_i}(\alpha) = \sum_{j=1}^{n_{joints}} costmap( fk_j(evaluate(K, J, \alpha, t_i) ) 
+ObstacleCost_{t_i}(\alpha) = \sum_{j=1}^{n_{joints}} costmap( fk_j(evaluate(K, J, \alpha, t_i) ) 
 \]
 with \(fk_j\) being the forward kinematic for the joint \(j\) .
 </p>
@@ -365,42 +486,127 @@ with \(fk_j\) being the forward kinematic for the joint \(j\) .
 In our loss formulation we introduced the trajectory obstacle cost as the weighted sum of the average obstacle cost and the maximum obstacle cost using \( \lambda_{max\_cost} \).
 \[ 
 	ObstacleLoss(\alpha) = 
-	\lambda_{max\_cost} \max_{i} ObstacleLoss_{t_i}(\alpha)
-	+ (1 - \lambda_{max\_cost}) {1 \over n_{support}} \sum_{i=1}^{n_{support}} ObstacleLoss_{t_i}(\alpha)
+	\lambda_{max\_cost} \max_{i} ObstacleCost_{t_i}(\alpha)
+	+ (1 - \lambda_{max\_cost}) {1 \over n_{support}} \sum_{i=1}^{n_{support}} ObstacleCost_{t_i}(\alpha)
 \]
-The reason is that the optimization of the trajectory is not convex anymore as some cross-joint and cross-timestep communication is required for the trajectory to converge to a global optimum and not be stuck in a local optima.
+The reason is that the optimization of the trajectory is not convex anymore as some cross-joint and cross-timestep adaptation is required for the trajectory to converge to a global optimum and not be stuck in a local optima.
 </p>
 <p>
 We assume the gradient of the part of the trajectory close to the obstacles is not big enough to overcome the local optima of the cost of the constraints and the smoothness cost, and thus the optimizer will find other ways to decrease the average trajectory cost without sufficiently increasing the distance to the nearest obstacles.
 
-In the following figure you can see the results of different \( \lambda_{max\_cost} \) values and you can see that the optimization without the max cost ( \( \lambda_{max\_cost} = 0 \) ) does not reach a sufficient optimization of the trajectory.
+In the following figure you can see the results of different \( \lambda_{max\_cost} \) values.
 </p>
 
 <figure class="blog-banner">
-	<img class="img-fluid" src="assets/images/lambda_max_cost.png" alt="image">
-	<figcaption class="mt-2 text-center image-caption">Different Results for different \( \lambda_{max\_cost} \)</figcaption>
+	<img class="img-fluid" src="assets/images/lambda_max_cost.png" alt="image" width="1000px">
+	<figcaption class="mt-2 text-center image-caption">Different Trajectory Results for different \( \lambda_{max\_cost} \)</figcaption>
 </figure>
 
-<!-- 0.0  1.75 3.37  -->
-<!-- 0.25 1.64 2.19   -->
-<!-- 0.5  1.69 2.19   -->
-<!-- 0.75 1.73 2.19   -->
-<!-- 1.0  1.82 2.19   -->
+<p>
+We can see that the trajectory of the optimization without the max cost ( \( \lambda_{max\_cost} = 0 \) ) stays very close to the straight line intialization and does not find a suitable solution to increase the minimum distance to the obstacles. 
+<br>
+Although the other trajectories have a different objective some still achieve lower average costs than \( \lambda_{max\_cost} = 0 \) and we therefore assume a local optima to be present.
+In the follwing table you can see the average and maximum loss for the above shown trajectories.
+</p>
+
+<table class="table table-striped mb-5 table-center ">
+	<thead>
+		<tr>
+			<th scope="col">\( \lambda_{max\_cost} \)</th>
+			<th scope="col">Average Cost</th>
+			<th scope="col">Maximum Cost</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td>0.0</td>
+			<td>1.75</td>
+			<td>3.37</td>
+		</tr>
+		<tr>
+			<td>0.25</td>
+			<td>1.64</td>
+			<td>2.19</td>
+		</tr>
+		<tr>
+			<td>0.5</td>
+			<td>1.69</td>
+			<td>2.19</td>
+		</tr>
+		<tr>
+			<td>0.75</td>
+			<td>1.73</td>
+			<td>2.19</td>
+		</tr>
+		<tr>
+			<td>1.0</td>
+			<td>1.82</td>
+			<td>2.19</td>
+		</tr>
+	</tbody>
+</table>
 
 <h4 class="mt-5 mb-3">Jacobian Matrix</h4>
 <p>
 In our trajectory formulation we use a matrix J to enable joint optimization with communication across different joints influencing each other.
-The original paper sugested using the robotic Jacobian matrix as this matrix J. In our experiments the optimization did not find a suitable solution if we used the actual Jacobian matrix.
+While the original paper sugested using the robotic Jacobian matrix for this, we have seen in our experiments the optimization did not find a suitable solution if we used the actual Jacobian matrix.
 We think that the reason is that the magnitude of the entries of a robotic Jacobian very different. Naturally the elements for the first joint are larger than those of the last joints, which makes any optimization with the same learning rate impossible or at least very hard.
 But as we have seen that random cross joint communication is speeding up the trajectory optimzation, we use a different matrix J, described in the <a href="#Trajectory Initialization">Trajectory Initialization Section</a>.
 </p>
 
+<h4 class="mt-5 mb-3">Jax Profile</h4>
+
+<p>
+Another important tool in our development was the <a href="https://jax.readthedocs.io/en/latest/profiling.html">jax profile</a> we already used during the runtime experiments. While it is not that intuitive to understand at first, it can help significantly in the development. 
+For once, we used it to detect when jax recompiles functions as inputs changed and how long recompilation take. Avoiding recompliation is quite important to get low runtimes as they often take 100-1000ms.
+Also it shows the amount of calls and runtimes of a function which we used in the experiments.
+</p>
+
+
 <h2 class="mt-5 mb-3"><span id="Conclusion"></span>Conclusion</h2>
 
-While a trajectory formulated in the RKHS is easier to optimize the approach is still very sensitive to the hyper parameters.
+<p>
+	In this project we developed a realtime capable trajectory optimization using functional gradients and jax.
+	We have discussed the advantages of the analytical gradient compared to the automatic differentiation provided by jax and the effect of a completely just-in-time compiled optimization.
+	While a trajectory formulated in the RKHS is easier to optimize the approach is still quite sensitive to the hyper parameters. But we are confident that it can be used for real robot deployment.
+</p>
 
 
-TODO jax porofile recompilation
+			
+<nav class="blog-nav nav nav-justified my-5">
+	<a class="nav-link-top nav-item nav-link rounded" href="#">Back to Start<i class="arrow-prev fas fa-long-arrow-alt-up"></i><i class="arrow-next fas fa-long-arrow-alt-up"></i></a>
+</nav>
+	
+</div><!--//container-->
+</article>
+	
+	
+<footer class="footer text-center py-2 theme-bg-dark">
+	
+	<!--/* This template is free as long as you keep the footer attribution link. If you'd like to use the template without the attribution link, you can buy the commercial license via our website: themes.3rdwavemedia.com Thank you for your support. :) */-->
+	<small class="copyright">Blog based on template by <a href="https://themes.3rdwavemedia.com" target="_blank">Xiaoying Riley</a></small>
+	
+</footer>
+
+</div><!--//main-wrapper-->
+    
+
+        
+       
+<!-- Javascript -->          
+<script src="assets/plugins/popper.min.js"></script> 
+<script src="assets/plugins/bootstrap/js/bootstrap.min.js"></script> 
+
+<!-- Page Specific JS -->
+<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/highlight.min.js"></script>
+
+<!-- Custom JS -->
+<script src="assets/js/blog.js"></script> 
+
+
+</body>
+</html> 
+
 
 
 
@@ -495,38 +701,3 @@ export  $initHighlight;
 
 </div>
  -->
-				
-	<nav class="blog-nav nav nav-justified my-5">
-		<a class="nav-link-top nav-item nav-link rounded" href="#">Back to Start<i class="arrow-prev fas fa-long-arrow-alt-up"></i><i class="arrow-next fas fa-long-arrow-alt-up"></i></a>
-	</nav>
-	
-</div><!--//container-->
-</article>
-	
-	
-<footer class="footer text-center py-2 theme-bg-dark">
-	
-	<!--/* This template is free as long as you keep the footer attribution link. If you'd like to use the template without the attribution link, you can buy the commercial license via our website: themes.3rdwavemedia.com Thank you for your support. :) */-->
-	<small class="copyright">Blog based on template by <a href="https://themes.3rdwavemedia.com" target="_blank">Xiaoying Riley</a></small>
-	
-</footer>
-
-</div><!--//main-wrapper-->
-    
-
-        
-       
-<!-- Javascript -->          
-<script src="assets/plugins/popper.min.js"></script> 
-<script src="assets/plugins/bootstrap/js/bootstrap.min.js"></script> 
-
-<!-- Page Specific JS -->
-<script src="//cdnjs.cloudflare.com/ajax/libs/highlight.js/11.5.1/highlight.min.js"></script>
-
-<!-- Custom JS -->
-<script src="assets/js/blog.js"></script> 
-
-
-</body>
-</html> 
-

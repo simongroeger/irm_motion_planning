@@ -25,6 +25,10 @@ a {
 	}
 }
 
+.left, .right {
+	display: inline-block;
+  }
+
 
 a.text-link {
 	text-decoration: none;
@@ -181,6 +185,18 @@ a.text-link {
 		a {
 			color: #fff;
 			text-decoration: underline;
+			
+			&:hover {
+				color: rgba(0, 0, 0, 0.6);
+				
+			}
+		}
+	}
+
+	.navbio {
+		font-size: 1.5;
+		a {
+			color: #fff;
 			
 			&:hover {
 				color: rgba(0, 0, 0, 0.6);
