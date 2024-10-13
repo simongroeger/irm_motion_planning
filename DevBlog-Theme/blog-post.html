@@ -84,17 +84,17 @@ Actual content
 </figure>
 
 <p>
-	In this project we develop a trajectory optimization approach using the Reproducing Kernel Hilbert Space. 
-	We use jax and its just-in-time compilation and analytical gradients to reduce the runtime to 3.1ms and enable robot deployment.
-	We use a constraint optimization problem for the trajectory to reach the start and goal configuration and respect the physical limitations of the robot.
+	In this project, we develop a trajectory optimization approach using the Reproducing Kernel Hilbert Space. 
+	We use JAX and its just-in-time (JIT) compilation and analytical gradients to reduce the runtime to 3.1ms and enable robot deployment.
+	We use a constraint optimization problem for the trajectory to reach both the start and goal configurations while respecting the robot's physical limitations.
 </p>
 
 <h2 class="mt-5 mb-3"><span id="Introduction"></span>Introduction</h2>
 
 <p>
-	In motion planning, the trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS) and intialized in a straight line from start to goal configuration. 
-	By minimizing the cost of the trajectory using functional gradient descent we avoid obstacles.
-	Using the RKHS and functional gradients usually leads to better results as the problem formulation has fewer local optima.
+	In motion planning, the trajectories are often defined in the Reproducing Kernel Hilbert Space (RKHS) and initialized in a straight line from the start to the goal configuration. 
+	By minimizing the cost of the trajectory using functional-gradient descent we avoid obstacles.
+	Using the RKHS and functional gradients usually results better as the problem formulation has fewer local optima.
 </p>
 
 <h2 class="mt-5 mb-3"><span id="Math"></span>Math</h2>
@@ -103,32 +103,32 @@ Actual content
 
 <p> 
 
-	Our trajectory, defined in RKHS, is defined between 0 and 1 and has a parameter matrix \(\alpha\), a kernel matrix K and an additional matrix J. 
-	The kernel matrix uses the RBF kernel and the matrix J enables cross joint communication and optimization.
+	Our trajectory, defined in RKHS, is parameterized between 0 and 1 and includes a parameter matrix \(\alpha\), a kernel matrix \(K\), and an additional matrix \(J\). 
+	The kernel matrix uses the RBF kernel and the matrix J enables cross-joint communication and optimization.
 	The trajectory can be evaluated to the joint position for any timestep \(t\) in \([0, 1]\) using 
 	\[ 
 	evaluate(K, J, \alpha, t) = K(\cdot, t) \alpha J 
 	\]
 	and the joint position of joint \(j\) can be received with  \( evaluate(K, J, \alpha, t)[j] \).
 <br>
-	For the evaluation of the joint velocity, we define an additional kernelmatrix dK with \( dK = {\partial \over \partial t} K \) , such that it holds:  
+	For the evaluation of the joint velocity, we define an additional kernel matrix \(dK\) with \( dK = {\partial \over \partial t} K \) , such that it holds:  
 	\[ 
 	{\partial \over \partial t} evaluate(K, J, \alpha, t) = evaluate(dK, J, \alpha, t) 
 	\]
 	Thus the evaluation of the joint velocity is faster without having to differentiate each time.
 </p>
 <p>
-	During the trajectory optimzation a finite fixed set of supporting points \( t_i \) for \( i \in \{1,...,n_{support}\} \) is used to allow the use a precomputed fixed Kernel matrix to speedup the trajectory optimization.
+	During the trajectory optimization a finite fixed set of supporting points \( t_i \) for \( i \in \{1,...,n_{support}\} \) is used to allow the use of a precomputed fixed kernel matrix to speedup the trajectory optimization.
 </p>	
 
 
 <h4 class="mt-5 mb-3">Constraint Loss Formulation</h4>
 
 <p>
-The trajectory optimization problem consists of the loss of the trajectory in the cost map and multiple trajectory constraints.
-The trajectory constraints define the distance of the start and end of the trajectory to the start and goal configuration of our environment. Additionally, the joint position is limited to a max and min position and the joint velocity is limited to an maximum absolute velocity.
+The trajectory optimization problem involves minimizing the trajectory's cost in the cost map and satisfying multiple trajectory constraints.
+The trajectory constraints define the distance between the start and end of the trajectory and our environment's start and goal configurations. Additionally, the joint position is limited to a maximum and minimum position, and the joint velocity is limited to a maximum absolute velocity.
 
-Therefore the constraint formulation of our optimization problem is the following:
+Therefore, the constraint formulation of our optimization problem is as follows:
 
 \[ \min_{\alpha} L(\alpha) = \sum_{i=1}^{n_{support}} costmap( fk(evaluate(K, J, \alpha, t_i) ) + { \lambda_{reg}  \over 2 } || evaluate(K, J, \alpha, \cdot) ||^2_2 \]
 s.t. 
@@ -142,14 +142,14 @@ s.t.
 </p>
  
 
-<h4 class="mt-5 mb-3"><span id="Lagragian Loss Formulation"></span>Lagragian Loss Formulation</h4>
+<h4 class="mt-5 mb-3"><span id="Lagrangian Loss Formulation"></span>Lagrangian Loss Formulation</h4>
 
 <p>
-During optimization the constraint loss is transformed to a Lagragian formulation and optimized using the Squared Penalty Method. This method iteratively minimizes the current loss and increases the Lagragian multiplier by an order of magnitude until all constraints are satified.
+During optimization, the constraint loss is transformed into a Lagrangian formulation and optimized using the Squared Penalty Method. This method iteratively minimizes the current loss and increases the Lagrangian multiplier by an order of magnitude until all constraints are satisfied.
 </p>
 
 <p>
-The Constraint Loss Formulaton is defined as
+The Constraint Loss Formulation is defined as
 
 \[
 \min_{\alpha} L(\alpha) = ObstacleLoss(\alpha) + \lambda_{sg} StartGoalLoss(\alpha) 
@@ -172,7 +172,7 @@ StartGoalVelocityLoss(\alpha) = {1 \over 2 } || evaluate(dK, J, \alpha, t_1) ||^
 </p>
 <br>
 <p>
-Contrary to the StartGoalLoss, the JointLimitLoss is only applied if the limit is exceeded as thus is a bit more complicated.
+Unlike to the StartGoalLoss, the JointLimitLoss is only applied if the limit is exceeded, thus, is a bit more complicated.
 We chose to normalize the loss of the JointPositionLimit and JointVelocityLimit by using \(mean\_joint\_position = 0.5 (max\_joint\_position + min\_joint\_position)\), \(std\_joint\_position = 0.5 |max\_joint\_position - min\_joint\_position|\) and \(max\_joint\_velocity\) so that the loss of a constraint is 1 when the maximum or minimum is met and does not vary for different constraint values.
 \[
 JointLimitLoss(\alpha) = JointPositionLimitLoss(\alpha) + JointVelocityLimitLoss(\alpha)
@@ -195,7 +195,7 @@ JointVelocityLimitViolated(\alpha, i, j) = |evaluate(dK, J, \alpha, t_i)[j] | \g
 </p>
 <br>
 <p>
-For the optimization process the obstacle loss is adjusted from the initial objective to overcome local optima and improve convergence.
+For the optimization process, the obstacle loss is adjusted from the initial objective to overcome local optima and improve convergence.
 The used obstacle loss combines the average and the maximum trajectory cost of the supporting points \(t_i\) with a hyperparameter \( \lambda_{max\_cost} \) and is defined as follows:
 
 \[ ObstacleLoss(\alpha) = 
@@ -206,36 +206,36 @@ The used obstacle loss combines the average and the maximum trajectory cost of t
 ObstacleCost_{t_i}(\alpha) = costmap( fk(evaluate(K, J, \alpha, t_i) )
 \]
 
-We analyse the effect of different \( \lambda_{max\_cost} \) values in the <a href="#Insights">Insights</a>.
+We analyze the effect of different \( \lambda_{max\_cost} \) values in the <a href="#Insights">Insights</a>.
 </p>
 
 
 <h2 class="mt-5 mb-3"><span id="Implementation"></span>Implementation</h2>
 
 <p>
-The Trajectory Optimization is implemented in python with using jax and its numpy interface.
-Jax has two features we want to utilize in this work:
-The auto differentiation of functions can speedup the deelopment process as an adequate loss function can be designed without having to implement the analytical gradient each time to test it.
-Jax is able to achieve very fast runtimes using its just-in-time compilation of python code and thus being able to do trajecotry optimization at 50hz.
+The Trajectory Optimization is implemented in Python using <a href="https://jax.readthedocs.io/en/latest/">JAX</a> and its <a href="https://jax.readthedocs.io/en/latest/jax.numpy.html">NumPy interface</a>.
+JAX has two features we want to utilize in this work:
+The <a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.grad.html">automatic differentiation</a> of functions can speed up the development process as an adequate loss function can be designed without having to implement the analytical gradient each time to test it.
+JAX can achieve very fast runtimes using its <a href="https://jax.readthedocs.io/en/latest/jit-compilation.html">just-in-time compilation</a> of Python code and thus being able to do trajectory optimization at 50 Hz.
 </p>
 
 
 <h4 class="mt-5 mb-3"><span id="Trajectory Initialization"></span>Trajectory Initialization</h4>
 
 <p> 
-We start the trajecotry initialization by choosing \( n_{support} \) supporting timesteps \( t_i \) between 0 and 1, which are usually equally distanced.
-The Kernel matrix K and dK are initialized with the RBF kernel 
+We start the trajectory initialization by choosing \( n_{support} \) supporting timesteps \( t_i \) between 0 and 1, which are usually equally distanced.
+The Kernel matrix \(K\) and \(dK\) are initialized with the RBF kernel 
 \[
 K[i, j] = \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
 \]
-and its derivative
+and it's derivative
 \[
 dK[i, j] = \frac{t_i - t_j}{\text{rbf_var}^2} \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
 \]
 with the variance rbf_var.
 </p>
 <p>
-The matrix J is initialized as the addition of the identity matrix and random gaussian noise. The magnitude of the gaussian noise influences the cross joint communication and convergence speed. We achieved good robust results with a mean of 0.15.
+The matrix \(J\) is initialized as the addition of the identity matrix and random Gaussian noise. The magnitude of the Gaussian noise influences the cross-joint communication and convergence speed. We achieved good robust results with a mean of 0.15.
 </p>
 <p>
 The \(\alpha\) values are initialized by fitting the trajectory to 
@@ -254,30 +254,30 @@ This initializes the trajectory to a straight line starting at \(config_{start}\
 <h4 class="mt-5 mb-3">Analytical Gradient</h4>
 
 <p>
-To speedup the trajectory optimization we do not use the automatic differentiation offered by jax but implemented the analytical gradient.
+To speed up the trajectory optimization we do not use the automatic differentiation offered by JAX but implement the analytical gradient.
 </p>
 <p>
-While the gradient computation of the various elements of our loss function is very straight-forward, the complexity of the Lagragian loss complicated the combination of sub-gradients to the final gradient.
-During the implementation of the analytical gradient we used two main supporting tools:
+While the gradient computation of the various elements of our loss function is very straightforward, the complexity of the Lagrangian loss complicated the combination of sub-gradients to the final gradient.
+During the implementation of the analytical gradient, we used two main supporting tools:
 <br>
-The newest model of ChatGPT GPT-4o was able to implement the analytical gradient of a provided function with hardly any mistakes. 
+The newest model of ChatGPT GPT-4 was able to implement the analytical gradient of a provided function with hardly any mistakes. 
 <br>
-By comparing the result of our implementation to the one of the jax auto differentiation we could iteratively ensure the correctness of our gradient computation for each sub function.
+By comparing the result of our implementation to the one of the JAX automatic differentiation we could iteratively ensure the correctness of our gradient computation for each sub-function.
 <br>
-The combination of both tools made this part of this work a lot more pleasant and speedup the development significantly.
+The combination of both tools made this part of this work a lot more pleasant and sped up the development significantly.
 </p>
 
 <h5 class="mt-5 mb-3">Optimizer</h5>
 
 <p>
-As described in the <a href="#Lagragian Loss Formulation">Largragian Loss Formulation Section</a>, we use a dual optimiation to find a minimal solution while holding the constraints.
+As described in the <a href="#Lagrangian Loss Formulation">Lagrangian Loss Formulation Section</a>, we use a dual optimization to find a minimal solution while holding the constraints.
 For the dual optimization, especially with the lambda having different orders of magnitude, a fixed learning rate is not suitable to robustly find a solution.
 Therefore we implemented two different optimizers for comparison.
 <br>
-The first optimizer uses regular Gradient Descent with a different learning rate for each outer iteratetion of the dual optimization to compensate the increase of the lambdas.
-The second optimizer uses Backtracking Line Search Gradient Descent and thus uses an adaptive learning rate which does not need any other finetuning.
+The first optimizer uses regular Gradient Descent with a different learning rate for each outer iteration of the dual optimization to compensate for the increase of the lambdas.
+The second optimizer uses Backtracking Line Search Gradient Descent and thus uses an adaptive learning rate that does not need any other fine-tuning.
 <br>
-In practise the Backtracking Line Search Gradient Descent is more robust to different environments than the regular Gradient Descent due to the adaptive learning rate.
+In practice, the Backtracking Line Search Gradient Descent is more robust to different environments than the regular Gradient Descent due to the adaptive learning rate.
 We will compare both optimizers in the experiments regarding runtime.
 </p>
 
@@ -313,47 +313,47 @@ while not constraint_fulfilled(alpha, K, dK, J) or n_outer==0 do
 <h4 class="mt-3 mb-3">Environment</h4>
 
 <p>
-Our Environment is defined by the \(config_{start}\) and \(config_{goal}\) of the robot, and a number of obstacles that need to be avoided and passed with maximal distance. 
+Our Environment is defined by the \(config_{start}\) and \(config_{goal}\) of the robot, and several obstacles that need to be avoided and passed with maximal distance. 
 </p><p>
-For the obstacles, we define a costmap with the 
+For the obstacles, we define a cost map with the 
 \[
 costfunction(x) = \sum_{i=1}^{n_{obstacles}} {0.8 \over 0.5 + 0.5 ||x  - obstacle_i||^2_2 } 
 \]
 to get a convex optimization problem concerning a 2D point in the environment.
 <br>
-The environment, we use in our experiments, is shown below along with the gradient field of the costmap that maximizes the distance to the obstacles
+The environment, we use in our experiments, is shown below along with the gradient field of the cost map that maximizes the distance to the obstacles
 </p>
 
 <figure class="left">
 	<img class="img-fluid" src="assets/images/obstacles_costmap.png" alt="image" width="50%">
 	<img class="img-fluid" src="assets/images/gradientfield.png" alt="image" width="45%">
-	<figcaption class="mt-2 text-center image-caption">Obstacles of our environment with the resulting costmap and the robots start and goal configuration on the left and Gradient Field of the Costmap on the right</figcaption>
+	<figcaption class="mt-2 text-center image-caption">Obstacles of our environment with the resulting cost map and the robots start and goal configuration on the left and Gradient Field of the cost map on the right</figcaption>
 </figure>
 
 
 <h4 class="mt-5 mb-3">Runtime</h4>
 
 <p>
-One goal of this project was to achieve a runtime of the trajectory optimization enabling robot control at 50hz.
+One goal of this project was to achieve a runtime of trajectory optimization enabling robot control at 50 Hz.
 </p><p>
-In our experiments, we intialize the optimizers and perform the just-in-time compilation, which takes around a second, before our runtime measurements.
-As optimizers are able to solve dynamicly changing environments (\(config_{start}\), \(config_{goal}\), and obstacles) without recompilation, this approach is also possible for real robot deployment.
-And therefore, we find excluding the compilation fromthe runtime measurement the most realistic approach.
+In our experiments, we initialize the optimizers and perform the just-in-time compilation, which takes around a second, before our runtime measurements.
+As optimizers can solve dynamically changing environments (\(config_{start}\), \(config_{goal}\), and obstacles) without re-compilation, this approach is also possible for real robot deployment.
+And therefore, we find excluding the compilation from the runtime measurement the most realistic approach.
 </p>
 
 <h5 class="mt-3 mb-3">Optimizers</h5>
 <p>
-As previously discussed we implemented two optimizer to solve the problem. Both optimizer use the same just-in-time compiled loss and gradient function. For both optimizers, we implemented two versions of the optimization loop. The first version uses regular python code and the second one is adjusted to support just-in-time compilation by replacing <i>if</i> and <i>while</i> statements with constructs like <i><a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.cond.html">jax.lax.cond</a></i> and <i><a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.while_loop.html">jax.lax.while_loop</a></i>. 
+As previously discussed we implemented two optimizers to solve the problem. Both optimizers use the same just-in-time compiled loss and gradient function. For both optimizers, we implemented two versions of the optimization loop. The first version uses regular Python code and the second one is adjusted to support just-in-time compilation by replacing <i>if</i> and <i>while</i> statements with constructs like <i><a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.cond.html">jax.lax.cond</a></i> and <i><a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.while_loop.html">jax.lax.while_loop</a></i>. 
 We use the analytical gradient for this experiment and compare their runtimes in the next table. 
 </p><p>
-We see that the Backtracking Line Search approach is significantly faster than the Regular Gradient Descent, which we attribute this to the fact that it needs almost only half the optimization steps (145 vs 259) due to its adaptive learning rate. 
-Also the JIT loop is a lot faster than the regular loop which was to be expected.
+We see that the Backtracking Line Search approach is significantly faster than the Regular Gradient Descent, which we attribute to the fact that it needs almost only half the optimization steps (145 vs 259) due to its adaptive learning rate. 
+Also, the JIT loop is a lot faster than the regular loop which was to be expected.
 </p>
 
 <table class="table table-bordered mb-5 table-center">
 	<thead>
 		<tr>
-			<th scope="col">Runtimes with Mean <br> and Standart Deviation </th>
+			<th scope="col">Runtimes with Mean <br> and Standard Deviation </th>
 			<th scope="col">Backtracking Line Search <br> Gradient Descent</th>
 			<th scope="col">Regular <br> Gradient Descent </th>
 		</tr>
@@ -375,9 +375,10 @@ Also the JIT loop is a lot faster than the regular loop which was to be expected
 
 <h5 class="mt-3 mb-3">Analytical Gradient and Automatic Differentiation</h5>
 <p>
-	We also want to evaluate the speedup of our analytical gradient compared to the <a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.grad.html">automatic differentiation of jax</a>.
-	Here we observe only a small diffference when using the JIT loop but a big difference in the regular loop. 
-	From analysing the <a href="https://jax.readthedocs.io/en/latest/profiling.html">jax profile</a> we can see that the automatic differentiation performs an explicit backwards step in each iteration of the regular loop to discover the gradient path while it saves this path and just recomputes the resuling gradient in the JIT loop and is therefore much faster. 
+	We also want to evaluate the speedup of our analytical gradient compared to the <a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.grad.html">automatic differentiation of JAX</a>.
+	Here we observe only a small difference when using the JIT loop but a significant difference in the regular loop. 
+	From analyzing the <a href="https://jax.readthedocs.io/en/latest/profiling.html">JAX profile</a> we can see that the automatic differentiation performs an explicit backward step in each iteration of the regular loop to discover the gradient path.
+        In the JIT loop the explicit backward step is only done during compilation and then just recomputes the resulting gradient in the following iterations is therefore much faster. 
 	We think that this is very interesting because the loss function has been just-in-time compiled so the gradient path should not be able to vary.
 </p>
 
@@ -406,10 +407,10 @@ Also the JIT loop is a lot faster than the regular loop which was to be expected
 
 <h5 class="mt-3 mb-3">Loss and Gradient Function and its subparts</h5>
 <p>
-	Next we want to analyse the runtime of the loss and gradient function and how this divides into the different subparts.
-	We again use the jax profile to get these information. Unfortunately it is not possible to measure the runtime of parts of a jit-compiled function and therefore we have to use a uncompiled version of the loss and grdient function to get the runtime of the jit-compiled parts of the function. These results are not the same as when the whole loss function is compiled as some optimizations between multiple subfunction are not possible. But they give an intuition on the relative runtimes.
+	Next, we want to analyze the runtime of the loss and gradient functions and how this is divided into the different subparts. 
+	We again use the JAX profiler to obtain this information. Unfortunately, it is not possible to measure the runtime of parts of a JIT-compiled function, and therefore we have to use an uncompiled version of the loss and gradient functions to get the runtime of the JIT-compiled parts. These results are not the same as when the whole loss function is compiled, as some optimizations between multiple subfunctions are not possible. However, they provide an intuition of the relative runtimes.
 </p><p>
-	We show the results in the following plot. We see that the runtimes of matching loss and gradient function are often very similar, while the only significant difference is the Obstacle Loss which is due to the fact that the gradient of a maximum operator takes longer to compute than the maximum itself.
+	We show the results in the following plot. We see that the runtimes of the matching loss and gradient functions are often very similar, with the only significant difference being the Obstacle Loss. This is because the gradient of a maximum operator takes longer to compute than the maximum itself.
 </p>
 
 <div>
@@ -419,14 +420,14 @@ Also the JIT loop is a lot faster than the regular loop which was to be expected
 </div>
 
 <p>
-While those functions only need a few microseconds in this experiment, the computation of the overall loss and gradient function only need 18.2µs and 24.2µs each when they are jit-compiled.
-So there is still a lot of speedup in the joint compilation but we are not able to analyse it. 
+	While these functions only take a few microseconds in this experiment, the computation of the overall loss and gradient functions requires only 18.2 µs and 24.2 µs, respectively, when JIT-compiled. So, there is still a substantial speedup in the joint compilation, but we are unable to fully analyze it.
 </p>
 
 
 <h5 class="mt-3 mb-3">Scalability for different problem sizes</h5>
 
-We also want to evaluate how well our solution scales for different problem sizes. In our case the amount of supporting points \(n_{support}\) influences the problem size. Especially as it influences the size of the kernel matrices quadratically it affects the runtimes heavily.
+We also want to evaluate how well our solution scales for different problem sizes. In our case, the number of supporting points \(n_{support}\) influences the problem size. 
+Since this number affects the size of the kernel matrices quadratically, it significantly impacts the runtimes.
 While we can observe a linear runtime complexity for up to 100 supporting points, the runtime grows quadratically in larger problems.
 
 <div width="800px>
@@ -439,9 +440,9 @@ While we can observe a linear runtime complexity for up to 100 supporting points
 <h4 class="mt-5 mb-3">Videos</h4>
 
 <p>
-	In this section we want to show two videos of our trajectory optimization.
+	In this section, we will show two videos of our trajectory optimization.
 	<br>
-	The first video shows the trajectory optimization process, starts at the straight line intialization and converges to the optimal solution avoiding all the obstacles.
+	The first video shows the trajectory optimization process, starting at the straight-line initialization and converging to the optimal solution avoiding all the obstacles.
 </p>
 
 <div>
@@ -451,7 +452,7 @@ While we can observe a linear runtime complexity for up to 100 supporting points
 
 
 <p>
-	and in the following video you see the final robot movement of the optimized trajectory.
+	and in the following video, you see the final robot movement of the optimized trajectory.
 </p>
 
 <div>
@@ -471,8 +472,8 @@ While we can observe a linear runtime complexity for up to 100 supporting points
 <h4 class="mt-3 mb-3">Complete Robot Obstacle Avoidance</h4>
 
 <p>
-Depending on the application not only the end-effector but the whole robot is placed in an environment with obstacles which are to avoid. 
-In this case the cost fuction can be easily adjusted to minimize the cost at the position of all joints:
+	Depending on the application, not only the end-effector but the whole robot may be placed in an environment with obstacles that need to be avoided. 
+	In this case, the cost function can be easily adjusted to minimize the cost at the position of all joints:
 \[ 
 ObstacleCost_{t_i}(\alpha) = \sum_{j=1}^{n_{joints}} costmap( fk_j(evaluate(K, J, \alpha, t_i) ) 
 \]
@@ -483,18 +484,18 @@ with \(fk_j\) being the forward kinematic for the joint \(j\) .
 <h4 class="mt-5 mb-3">Lambda Max Cost</h4>
 
 <p>
-In our loss formulation we introduced the trajectory obstacle cost as the weighted sum of the average obstacle cost and the maximum obstacle cost using \( \lambda_{max\_cost} \).
+In our loss formulation, we introduced the trajectory obstacle cost as the weighted sum of the average obstacle cost and the maximum obstacle cost using \( \lambda_{max\_cost} \).
 \[ 
 	ObstacleLoss(\alpha) = 
 	\lambda_{max\_cost} \max_{i} ObstacleCost_{t_i}(\alpha)
 	+ (1 - \lambda_{max\_cost}) {1 \over n_{support}} \sum_{i=1}^{n_{support}} ObstacleCost_{t_i}(\alpha)
 \]
-The reason is that the optimization of the trajectory is not convex anymore as some cross-joint and cross-timestep adaptation is required for the trajectory to converge to a global optimum and not be stuck in a local optima.
+The reason is that the optimization of the trajectory is no longer convex, as some cross-joint and cross-timestep adaptation is required for the trajectory to converge to a global optimum rather than getting stuck in a local optimum.
 </p>
 <p>
-We assume the gradient of the part of the trajectory close to the obstacles is not big enough to overcome the local optima of the cost of the constraints and the smoothness cost, and thus the optimizer will find other ways to decrease the average trajectory cost without sufficiently increasing the distance to the nearest obstacles.
-
-In the following figure you can see the results of different \( \lambda_{max\_cost} \) values.
+	We assume the gradient of the part of the trajectory close to the obstacles is not large enough to overcome the local optima of the cost constraints and the smoothness cost. Thus, the optimizer may find other ways to decrease the average trajectory cost without sufficiently increasing the distance to the nearest obstacles. 
+	
+	In the following figure, you can see the results of different \( \lambda_{max\_cost} \) values.
 </p>
 
 <figure class="blog-banner">
@@ -503,10 +504,10 @@ In the following figure you can see the results of different \( \lambda_{max\_co
 </figure>
 
 <p>
-We can see that the trajectory of the optimization without the max cost ( \( \lambda_{max\_cost} = 0 \) ) stays very close to the straight line intialization and does not find a suitable solution to increase the minimum distance to the obstacles. 
+We can see that the trajectory of the optimization without the max cost ( \( \lambda_{max\_cost} = 0 \) ) stays very close to the straight line initialization and does not find a suitable solution to increase the minimum distance to the obstacles. 
 <br>
-Although the other trajectories have a different objective some still achieve lower average costs than \( \lambda_{max\_cost} = 0 \) and we therefore assume a local optima to be present.
-In the follwing table you can see the average and maximum loss for the above shown trajectories.
+Although the other trajectories have a different objective, some still achieve lower average costs than \( \lambda_{max\_cost} = 0 \) and we therefore assume a local optimum present.
+In the following table, you can see the average and maximum loss for the above-shown trajectories.
 </p>
 
 <table class="table table-striped mb-5 table-center ">
@@ -548,27 +549,27 @@ In the follwing table you can see the average and maximum loss for the above sho
 
 <h4 class="mt-5 mb-3">Jacobian Matrix</h4>
 <p>
-In our trajectory formulation we use a matrix J to enable joint optimization with communication across different joints influencing each other.
-While the original paper sugested using the robotic Jacobian matrix for this, we have seen in our experiments the optimization did not find a suitable solution if we used the actual Jacobian matrix.
-We think that the reason is that the magnitude of the entries of a robotic Jacobian very different. Naturally the elements for the first joint are larger than those of the last joints, which makes any optimization with the same learning rate impossible or at least very hard.
-But as we have seen that random cross joint communication is speeding up the trajectory optimzation, we use a different matrix J, described in the <a href="#Trajectory Initialization">Trajectory Initialization Section</a>.
+	In our trajectory formulation, we use a matrix \(J\) to enable joint optimization with communication across different joints influencing each other. 
+	While the original paper suggested using the robotic Jacobian matrix for this, we observed in our experiments that the optimization did not find a suitable solution when we used the actual Jacobian matrix. 
+	We believe the reason is that the magnitude of the entries in a robotic Jacobian varies significantly. Naturally, the elements for the first joint are larger than those for the last joints, making any optimization with the same learning rate either impossible or at least very difficult. 
+	However, since we observed that random cross-joint communication accelerates the trajectory optimization, we use a different matrix \(J\), as described in the <a href="#Trajectory Initialization">Trajectory Initialization Section</a>.
 </p>
 
-<h4 class="mt-5 mb-3">Jax Profile</h4>
+<h4 class="mt-5 mb-3">JAX Profile</h4>
 
 <p>
-Another important tool in our development was the <a href="https://jax.readthedocs.io/en/latest/profiling.html">jax profile</a> we already used during the runtime experiments. While it is not that intuitive to understand at first, it can help significantly in the development. 
-For once, we used it to detect when jax recompiles functions as inputs changed and how long recompilation take. Avoiding recompliation is quite important to get low runtimes as they often take 100-1000ms.
-Also it shows the amount of calls and runtimes of a function which we used in the experiments.
+Another important tool in our development was the <a href="https://jax.readthedocs.io/en/latest/profiling.html">JAX profile</a> we used during the runtime experiments.
+While it is not very intuitive to understand at first, it can significantly aid in development. 
+For example, we used it to detect when JAX recompiles functions as inputs change and to measure how long recompilation takes. 
+Avoiding recompilation is crucial for achieving low runtimes, as recompilation often takes 100-1000ms. Additionally, it shows the number of calls and runtimes of functions, which we used in our experiments.
 </p>
-
 
 <h2 class="mt-5 mb-3"><span id="Conclusion"></span>Conclusion</h2>
 
 <p>
-	In this project we developed a realtime capable trajectory optimization using functional gradients and jax.
-	We have discussed the advantages of the analytical gradient compared to the automatic differentiation provided by jax and the effect of a completely just-in-time compiled optimization.
-	While a trajectory formulated in the RKHS is easier to optimize the approach is still quite sensitive to the hyper parameters. But we are confident that it can be used for real robot deployment.
+	In this project, we developed a real-time capable trajectory optimization using functional gradients and JAX. 
+	We discussed the advantages of the analytical gradient compared to the automatic differentiation provided by JAX and the impact of just-in-time compilation on the overall optimization process. 
+	While a trajectory formulated in the RKHS is easier to optimize, the approach remains quite sensitive to hyperparameters. Nevertheless, we are confident that it can be used for real robot deployment.
 </p>
 
 
