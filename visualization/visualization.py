@@ -151,6 +151,7 @@ ax1.plot(t, trajectory[:, 1], '-', color='orange', label="joint 1")
 ax1.plot(t, trajectory[:, 2], '-', color='darkgreen', label="joint 2")
 
 # joint velocities 
+ax5.set_yticks(np.arange(-10, 10+1, 1.0))
 fd_joint_velocity = (trajectory[1:] - trajectory[:-1]) * N_timesteps
 ax5.plot(t[:-1], fd_joint_velocity[:, 0], '-', color='blue', label="joint 0")
 ax5.plot(t[:-1], fd_joint_velocity[:, 1], '-', color='orange', label="joint 1")

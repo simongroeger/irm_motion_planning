@@ -85,7 +85,7 @@ Actual content
 
 <p>
 	In this project, we develop a trajectory optimization approach using the Reproducing Kernel Hilbert Space. 
-	We use JAX and its just-in-time (JIT) compilation and analytical gradients to reduce the runtime to 3.1ms and enable robot deployment.
+	We use JAX and its just-in-time (JIT) compilation and analytical gradients to gain reduce the runtime from 2.4s to 3.1ms and enable robot deployment.
 	We use a constraint optimization problem for the trajectory to reach both the start and goal configurations while respecting the robot's physical limitations.
 </p>
 
@@ -96,6 +96,19 @@ Actual content
 	By minimizing the cost of the trajectory using functional-gradient descent we avoid obstacles.
 	Using the RKHS and functional gradients usually results better as the problem formulation has fewer local optima.
 </p>
+<p>
+	This project builds up on Marinho et al.: "<a href="https://arxiv.org/abs/1601.03648">Functional Gradient Motion Planning in Reproducing Kernel Hilbert Spaces</a>", 2016.
+</p>
+
+<h4 class="mt-5 mb-3">Reproducing Kernel Hilbert Space (RKHS)</h4>
+
+<p>
+	The RKHS is a vector space of functions and each RKHS is defined by a positive definite kernel function \( k(\cdot, \cdot) \). A functional in the RKHS is defined as a linear combination of the kernel function \( k \) evaluated at some supporting points \(x_c\).
+	The functional can be evaluated to a value at \(x\) with: \( f(x) = \sum_{i=1}^{n} \alpha_i k(x_{c_i}, x) \).
+	Alternatively, a kernel matrix can be used, resulting in \( f(x) = \alpha K(x_c, x) \).
+	A theoretical advantage of functionals in optimization is that some parameterized loss functions that are non-convex can become convex as a functional in the function space.
+</p>
+
 
 <h2 class="mt-5 mb-3"><span id="Math"></span>Math</h2>
 
@@ -228,7 +241,7 @@ The Kernel matrix \(K\) and \(dK\) are initialized with the RBF kernel
 \[
 K[i, j] = \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
 \]
-and it's derivative
+and its derivative
 \[
 dK[i, j] = \frac{t_i - t_j}{\text{rbf_var}^2} \exp\left( - \frac{(t_i - t_j)^2}{2 \cdot \text{rbf_var}^2} \right)
 \]
@@ -321,7 +334,7 @@ costfunction(x) = \sum_{i=1}^{n_{obstacles}} {0.8 \over 0.5 + 0.5 ||x  - obstacl
 \]
 to get a convex optimization problem concerning a 2D point in the environment.
 <br>
-The environment, we use in our experiments, is shown below along with the gradient field of the cost map that maximizes the distance to the obstacles
+The environment, we use in our experiments, is shown below along with the gradient field of the cost map that maximizes the distance to the obstacles. In the dark green parts the cost is greater than 4, in the white section it is between 2.25 and 2.5 and in the deep magenta sections it is lower than 1. 
 </p>
 
 <figure class="left">
@@ -344,10 +357,12 @@ And therefore, we find excluding the compilation from the runtime measurement th
 <h5 class="mt-3 mb-3">Optimizers</h5>
 <p>
 As previously discussed we implemented two optimizers to solve the problem. Both optimizers use the same just-in-time compiled loss and gradient function. For both optimizers, we implemented two versions of the optimization loop. The first version uses regular Python code and the second one is adjusted to support just-in-time compilation by replacing <i>if</i> and <i>while</i> statements with constructs like <i><a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.cond.html">jax.lax.cond</a></i> and <i><a href="https://jax.readthedocs.io/en/latest/_autosummary/jax.lax.while_loop.html">jax.lax.while_loop</a></i>. 
+As a baseline we test both optimizers whithout a JIT compiled loss and gradient function.
 We use the analytical gradient for this experiment and compare their runtimes in the next table. 
 </p><p>
-We see that the Backtracking Line Search approach is significantly faster than the Regular Gradient Descent, which we attribute to the fact that it needs almost only half the optimization steps (145 vs 259) due to its adaptive learning rate. 
-Also, the JIT loop is a lot faster than the regular loop which was to be expected.
+We see that our work, with the JIT complied loss and gradient function, is an order of a magnitude faster than the baseline.
+Also, the Backtracking Line Search approach is significantly faster than the Regular Gradient Descent, which we attribute to the fact that it needs almost only half the optimization steps (145 vs 259) due to its adaptive learning rate. 
+Interestingly, the JIT loop is a lot faster than the regular loop. We did not expect the difference to be this large, as there are many jumps in the control flow to evaluate in the optimization loop due to the <i>if</i> and <i>while</i> conditions.
 </p>
 
 <table class="table table-bordered mb-5 table-center">
@@ -360,6 +375,11 @@ Also, the JIT loop is a lot faster than the regular loop which was to be expecte
 	</thead>
 	<tbody>
 		<tr>
+			<th>Baseline </th>
+			<td> 2391.32ms ( 59.70ms ) </td>
+			<td> 3091.98ms ( 69.80ms ) </td>
+		</tr>
+		<tr>
 			<th>Regular Loop</th>
 			<td> 34.81ms ( 1.03ms ) </td>
 			<td> 122.59ms ( 1.31ms ) </td>
@@ -369,7 +389,6 @@ Also, the JIT loop is a lot faster than the regular loop which was to be expecte
 			<td> 3.12ms ( 0.01ms ) </td>
 			<td> 7.26ms ( 0.06ms ) </td>
 		</tr>
-		
 	</tbody>
 </table>
 
@@ -458,11 +477,21 @@ While we can observe a linear runtime complexity for up to 100 supporting points
 <div>
 <img id="gif1" src="assets/images/trajectory_robotmovement.gif" width="800px"
     onmouseover="document.getElementById('gif1').src='assets/images/trajectory_robotmovement.gif'" 
-/></div>
-
-<!-- TODO Videos: final result yupiter -->
-
-
+/>
+</div>
+<br>
+<p>
+	The joint position and velocity of the trajectory are illustrated below. 
+	On the left, you can also see the straight-line initialization in gray.
+	In the plot of the joint velocities, you can see that they fulfill the joint velocity constraint of 7 while pushing the limit to minimize the obstacle cost.
+</p>
+<div>
+	<figure class="blog-banner">
+		<img class="img-fluid" src="assets/images/joint_pos_vel.png" alt="image" >
+		<figcaption class="mt-2 text-center image-caption"> Joint position (left) and velocity (right) of the optimized trajectory </figcaption>
+	</figure>
+</div>
+	
 
 
 
@@ -500,7 +529,7 @@ The reason is that the optimization of the trajectory is no longer convex, as so
 
 <figure class="blog-banner">
 	<img class="img-fluid" src="assets/images/lambda_max_cost.png" alt="image" width="1000px">
-	<figcaption class="mt-2 text-center image-caption">Different Trajectory Results for different \( \lambda_{max\_cost} \)</figcaption>
+	<figcaption class="mt-2 text-center image-caption">Different trajectory results for different \( \lambda_{max\_cost} \)</figcaption>
 </figure>
 
 <p>

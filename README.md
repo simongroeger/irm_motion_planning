@@ -2,18 +2,38 @@
 
 This project provides a trajectory optimization using the RKHS and functional-gradient descent.
 
+## Installation
+The required libraries can be installed using pip and was tested in Python3.8 in Ubuntu20
+```
+pip install -r requirements.txt
+```
+
 ## Starting the code
-The code can be started with the main.py and different hyperparameter can easily bechanged using the argparser.
+The trajectory optimization code can be started with the main.py and different hyperparameter can be changed easily using the argparser.
 
 The project is divided into different python files:
 main.py manages the hyperparameters and calls the optimization
-There are 2 optimizers implemented: optimizer_BLS.py and optimizerGD.y
+
+There are 2 optimizers implemented: optimizer_BLS.py and optimizerGD.py
+<ul>
+  <li>A Backtracking Line Search Gradient Descent is implemented in optimizer_BLS.py</li>
+  <li>A regular Gradient Descent is implemented in optimizer_BLS.py</li>  
+</ul>
+
 In trajectory.py the trajectory is defined and the robot is modeled in robot.py.
-In environment.yp the environment is defined which can be dynamically changed during deployment without having to re-compile.
+
+In environment.py the environment is defined which can be dynamically changed during deployment without having to re-compile.
 
 ## Visualization
-The visualization is in a seperate directory. To solve some issues with python's relative includes the visualization has to be started from this folder.
-It can visualize the whole process, only the environment or create an animation of the robots movement or the optimization process.
+We split the visualization from the optimization itself and put is in a seperate directory.
+To solve some issues with python's relative includes the visualization has to be started from the visualization folder.
+The visualization loads a trajectory_result.txt or a trajectory_series.txt . If the main.py is started from within the visulaization folder, which is possible, then the files are correctly saved in the visualization folder.
+<ul>
+  <li> visualization.py visualizes the whole process
+  <li> env_vis.py visulaizes only the environment 
+  <li> visualize_robotmovement.py create an animation of the robots movement
+  <li> visualize_series.py creates an animation of the optimization process.
+</ul>
 
 ## Blog
-The blog can be ound in DevBlog-Theme in blog-post.html and can be opened by simply opening the file in a browser.
+The blog can be found in DevBlog-Theme in blog-post.html and simply opening the file in a browser is sufficient to open the whole blog.
