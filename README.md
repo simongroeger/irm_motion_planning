@@ -27,7 +27,8 @@ In environment.py the environment is defined which can be dynamically changed du
 ## Visualization
 We split the visualization from the optimization itself and put is in a seperate directory.
 To solve some issues with python's relative includes the visualization has to be started from the visualization folder.
-The visualization loads a trajectory_result.txt or a trajectory_series.txt . If the main.py is started from within the visulaization folder, which is possible, then the files are correctly saved in the visualization folder.
+The visualization loads a trajectory_result.txt or a trajectory_series.txt that was saved in the optimization process. 
+If the main.py is started from within the visulaization folder, which is supported, then the files are already correctly saved in the visualization folder.
 <ul>
   <li> visualization.py visualizes the whole process
   <li> env_vis.py visulaizes only the environment 
