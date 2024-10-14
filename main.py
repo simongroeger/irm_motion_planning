@@ -92,7 +92,8 @@ def main():
             et = time.time()
             runtimes.append(1000*(et-st)/args.n_times)
             print("took", 1000*(et-st)/args.n_times, "ms")
-        print(np.mean(runtimes), np.std(runtimes))
+        if args.n_measurements > 1:
+            print("runtimes in ms: mean", np.mean(runtimes), "stddev", np.std(runtimes))
         return result_alpha
 
     if args.profiling:
